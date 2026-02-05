@@ -1,10 +1,14 @@
 use macroquad::prelude::*;
 
 mod assets;
+mod movement;
 
 const SCREEN_W: i32 = 960;
 const SCREEN_H: i32 = 540;
 const ACCENT: Color = Color::new(1.0, 0.9, 0.0, 1.0);
+const FIELD_GREEN: Color = Color::new(0.06, 0.35, 0.12, 1.0);
+const PLAYER_SIZE: f32 = 26.0;
+const PLAYER_SPEED: f32 = 220.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scene {
@@ -15,8 +19,7 @@ enum Scene {
 
 #[derive(Clone, Copy, Debug)]
 struct Player {
-    x: i32,
-    y: i32,
+    pos: Vec2,
 }
 
 struct Game {
@@ -34,7 +37,12 @@ impl Game {
     fn new() -> Self {
         Self {
             scene: Scene::Title,
-            player: Player { x: 1, y: 1 },
+            player: Player {
+                pos: vec2(
+                    SCREEN_W as f32 * 0.5 - PLAYER_SIZE * 0.5,
+                    SCREEN_H as f32 * 0.55 - PLAYER_SIZE * 0.5,
+                ),
+            },
             class_name: "Vexillomancer",
         }
     }
@@ -76,8 +84,6 @@ async fn main() {
             break;
         }
 
-        clear_background(BLACK);
-
         match game.scene {
             Scene::Title => render_title(&mut game, &assets),
             Scene::ClassSelect => render_class_select(&mut game),
@@ -89,6 +95,8 @@ async fn main() {
 }
 
 fn render_title(game: &mut Game, assets: &Assets) {
+    clear_background(BLACK);
+
     let title_size = 64.0;
     let subtitle_size = 28.0;
 
@@ -119,6 +127,8 @@ fn render_title(game: &mut Game, assets: &Assets) {
 }
 
 fn render_class_select(game: &mut Game) {
+    clear_background(BLACK);
+
     draw_centered("Choose Your Class", 120.0, 44.0, ACCENT);
 
     let class_line = format!("> {} <", game.class_name);
@@ -139,15 +149,28 @@ fn render_class_select(game: &mut Game) {
 }
 
 fn render_dungeon(game: &mut Game) {
+    clear_background(FIELD_GREEN);
+
     draw_centered("Dungeon", 60.0, 44.0, ACCENT);
-    draw_centered("Arrow keys to move", 110.0, 20.0, ACCENT);
+    draw_centered("WASD to move", 110.0, 20.0, ACCENT);
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
     draw_centered("Q to quit", 160.0, 20.0, ACCENT);
 
     handle_movement(game);
 
-    let pos_text = format!("Player position: ({}, {})", game.player.x, game.player.y);
-    draw_centered(&pos_text, 230.0, 24.0, ACCENT);
+    draw_rectangle(
+        game.player.pos.x,
+        game.player.pos.y,
+        PLAYER_SIZE,
+        PLAYER_SIZE,
+        BLACK,
+    );
+
+    let pos_text = format!(
+        "Player position: ({:.1}, {:.1})",
+        game.player.pos.x, game.player.pos.y
+    );
+    draw_centered(&pos_text, 230.0, 22.0, ACCENT);
 
     if is_key_pressed(KeyCode::Escape) {
         game.scene = Scene::ClassSelect;
@@ -155,25 +178,20 @@ fn render_dungeon(game: &mut Game) {
 }
 
 fn handle_movement(game: &mut Game) {
-    let mut dx = 0;
-    let mut dy = 0;
+    let input = movement::InputState {
+        up: is_key_down(KeyCode::W),
+        down: is_key_down(KeyCode::S),
+        left: is_key_down(KeyCode::A),
+        right: is_key_down(KeyCode::D),
+    };
 
-    if is_key_pressed(KeyCode::Up) {
-        dy = -1;
-    } else if is_key_pressed(KeyCode::Down) {
-        dy = 1;
-    } else if is_key_pressed(KeyCode::Left) {
-        dx = -1;
-    } else if is_key_pressed(KeyCode::Right) {
-        dx = 1;
-    }
+    let delta = movement::movement_delta(input, PLAYER_SPEED, get_frame_time());
+    game.player.pos += delta;
 
-    if dx != 0 || dy != 0 {
-        let new_x = (game.player.x + dx).clamp(0, 19);
-        let new_y = (game.player.y + dy).clamp(0, 11);
-        game.player.x = new_x;
-        game.player.y = new_y;
-    }
+    let max_x = (screen_width() - PLAYER_SIZE).max(0.0);
+    let max_y = (screen_height() - PLAYER_SIZE).max(0.0);
+    game.player.pos.x = game.player.pos.x.clamp(0.0, max_x);
+    game.player.pos.y = game.player.pos.y.clamp(0.0, max_y);
 }
 
 fn draw_centered(text: &str, y: f32, size: f32, color: Color) {
