@@ -4,6 +4,7 @@ mod assets;
 mod movement;
 mod flags;
 mod scenery;
+mod ley_lines;
 
 const SCREEN_W: i32 = 960;
 const SCREEN_H: i32 = 540;
@@ -18,6 +19,8 @@ const FLAG_POLE_WIDTH: f32 = 3.0;
 const FLAG_CLOTH_SIZE: Vec2 = Vec2::new(22.0, 14.0);
 const FLAG_PLACE_OFFSET: Vec2 = Vec2::new(28.0, 0.0);
 const FLAG_COUNT_START: usize = 10;
+const LEY_MAX_DISTANCE: f32 = 220.0;
+const LEY_BASE_COLOR: Color = Color::new(0.55, 0.42, 0.9, 1.0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scene {
@@ -39,6 +42,7 @@ struct Game {
     flag_inventory: u32,
     wind: flags::Wind,
     scenery: Vec<scenery::SceneryItem>,
+    ley_lines: Vec<ley_lines::LeyLine>,
 }
 
 struct Assets {
@@ -62,6 +66,7 @@ impl Game {
             flag_inventory: 0,
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
             scenery: scenery::spawn_scenery(field_rect),
+            ley_lines: Vec::new(),
         }
     }
 }
@@ -180,6 +185,7 @@ fn render_dungeon(game: &mut Game) {
 
     let time = get_time() as f32;
     scenery::draw_scenery(&game.scenery, time);
+    draw_ley_lines(&game.ley_lines);
     for flag in &game.flags {
         draw_flag(flag, time, game.wind);
     }
@@ -228,6 +234,7 @@ fn handle_flag_interactions(game: &mut Game) {
             field,
         );
         if placed {
+            game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
             return;
         }
     }
@@ -235,6 +242,7 @@ fn handle_flag_interactions(game: &mut Game) {
     if is_mouse_button_pressed(MouseButton::Right) {
         if flags::try_pickup_flag(&mut game.flags, game.player.pos, FLAG_INTERACT_RADIUS) {
             game.flag_inventory = game.flag_inventory.saturating_add(1);
+            game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
         }
     }
 }
@@ -261,6 +269,19 @@ fn draw_hud(flag_count: u32) {
 
     let text = format!("Flags: {}", flag_count);
     draw_text(&text, 16.0, y + 32.0, 26.0, ACCENT);
+}
+
+fn draw_ley_lines(lines: &[ley_lines::LeyLine]) {
+    for line in lines {
+        let color = Color {
+            r: LEY_BASE_COLOR.r,
+            g: LEY_BASE_COLOR.g,
+            b: LEY_BASE_COLOR.b,
+            a: line.intensity.clamp(0.1, 1.0),
+        };
+        let width = 2.0 + 4.0 * line.intensity;
+        draw_line(line.a.x, line.a.y, line.b.x, line.b.y, width, color);
+    }
 }
 
 fn draw_centered(text: &str, y: f32, size: f32, color: Color) {
