@@ -10,13 +10,19 @@ pub enum SceneryKind {
     Dome,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DomeDecoration {
+    Crystal,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct SceneryItem {
     pub kind: SceneryKind,
     pub pos: Vec2,
     pub scale: f32,
     pub rotation: f32,
     pub variant: u8,
+    pub decorations: Vec<DomeDecoration>,
 }
 
 const BASE_W: f32 = 800.0;
@@ -53,6 +59,7 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
             scale: 1.0,
             rotation: 0.0,
             variant: i as u8 % TENT_COLORS.len() as u8,
+            decorations: Vec::new(),
         });
     }
 
@@ -73,6 +80,7 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
             scale: 1.0,
             rotation: chair_rotations[i % chair_rotations.len()],
             variant: 0,
+            decorations: Vec::new(),
         });
     }
 
@@ -85,6 +93,7 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
             scale: 1.0,
             rotation: 0.0,
             variant: 0,
+            decorations: Vec::new(),
         });
     }
 
@@ -105,17 +114,24 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
             scale,
             rotation: 0.0,
             variant: 0,
+            decorations: Vec::new(),
         });
     }
 
-    for _ in 0..DOME_COUNT {
+    for i in 0..DOME_COUNT {
         let pos = random_position(field, DOME_PADDING);
+        let decorations = if i == 0 {
+            vec![DomeDecoration::Crystal]
+        } else {
+            Vec::new()
+        };
         items.push(SceneryItem {
             kind: SceneryKind::Dome,
             pos,
             scale: 1.0,
             rotation: 0.0,
             variant: 0,
+            decorations,
         });
     }
 
@@ -129,7 +145,7 @@ pub fn draw_scenery(items: &[SceneryItem], time: f32) {
             SceneryKind::Tent => draw_tent(item.pos, item.variant),
             SceneryKind::Chair => draw_chair(item.pos, item.rotation),
             SceneryKind::Campfire => draw_campfire(item.pos, time),
-            SceneryKind::Dome => draw_geodesic_dome(item.pos),
+            SceneryKind::Dome => draw_geodesic_dome(item.pos, time, &item.decorations),
         }
     }
 }
@@ -265,7 +281,7 @@ fn draw_tree(pos: Vec2, scale: f32) {
     );
 }
 
-fn draw_geodesic_dome(center: Vec2) {
+fn draw_geodesic_dome(center: Vec2, time: f32, decorations: &[DomeDecoration]) {
     let radius = DOME_RADIUS;
     let height = DOME_HEIGHT;
     let squash = 0.4;
@@ -342,6 +358,134 @@ fn draw_geodesic_dome(center: Vec2) {
         1.0,
         Color::new(160.0 / 255.0, 210.0 / 255.0, 250.0 / 255.0, 0.3),
     );
+
+    if decorations.contains(&DomeDecoration::Crystal) {
+        draw_big_red_crystal(vec2(center.x, center.y - height * 0.35), time);
+    }
+}
+
+fn draw_big_red_crystal(center: Vec2, time: f32) {
+    let pulse = ((time * 1.1).sin() + 1.0) * 0.5;
+    let glow_alpha = 0.18 + pulse * 0.12;
+
+    let tip_h = 22.0;
+    let body_h = 56.0;
+    let half_w = 14.0;
+    let top_tip = center.y - (body_h * 0.5 + tip_h);
+    let body_top = center.y - body_h * 0.5;
+    let body_bottom = center.y + body_h * 0.5;
+    let bottom_tip = center.y + (body_h * 0.5 + tip_h);
+
+    draw_circle(
+        center.x,
+        center.y + 4.0,
+        42.0,
+        Color::new(1.0, 0.05, 0.05, glow_alpha),
+    );
+    draw_circle(
+        center.x,
+        center.y + 4.0,
+        26.0,
+        Color::new(0.7, 0.0, 0.0, glow_alpha * 0.8),
+    );
+
+    #[derive(Clone, Copy)]
+    struct Edge {
+        x: f32,
+        depth: f32,
+    }
+
+    let rot = time * 0.5;
+    let edge_count = 6usize;
+    let mut edges: Vec<Edge> = Vec::with_capacity(edge_count);
+    for i in 0..edge_count {
+        let a = rot + (i as f32 / edge_count as f32) * std::f32::consts::TAU;
+        edges.push(Edge {
+            x: a.sin() * half_w,
+            depth: a.cos(),
+        });
+    }
+
+    #[derive(Clone, Copy)]
+    struct Face {
+        i1: usize,
+        i2: usize,
+        depth: f32,
+        string_face: bool,
+    }
+
+    let mut faces: Vec<Face> = Vec::with_capacity(edge_count);
+    for i in 0..edge_count {
+        let i2 = (i + 1) % edge_count;
+        let depth = (edges[i].depth + edges[i2].depth) * 0.5;
+        faces.push(Face {
+            i1: i,
+            i2,
+            depth,
+            string_face: i == 0,
+        });
+    }
+
+    faces.sort_by(|a, b| a.depth.partial_cmp(&b.depth).unwrap());
+
+    for face in faces {
+        let e1 = edges[face.i1];
+        let e2 = edges[face.i2];
+        let brightness = face.depth * 0.35 + 0.55 + pulse * 0.1;
+        let r = (80.0 + brightness * 175.0).min(255.0) / 255.0;
+        let g = (brightness * 25.0).min(60.0) / 255.0;
+        let b = (brightness * 30.0).min(80.0) / 255.0;
+        let alpha = if face.string_face { 0.85 } else { 0.95 };
+        let color = Color::new(r, g, b, alpha);
+
+        let top1 = vec2(center.x + e1.x, body_top);
+        let top2 = vec2(center.x + e2.x, body_top);
+        let bottom1 = vec2(center.x + e1.x, body_bottom);
+        let bottom2 = vec2(center.x + e2.x, body_bottom);
+
+        draw_triangle(top1, top2, bottom2, color);
+        draw_triangle(top1, bottom2, bottom1, color);
+
+        draw_triangle(
+            vec2(center.x, top_tip),
+            top1,
+            top2,
+            Color::new(r * 0.95, g * 0.7, b * 0.7, alpha),
+        );
+        draw_triangle(
+            vec2(center.x, bottom_tip),
+            bottom2,
+            bottom1,
+            Color::new(r * 0.75, g * 0.5, b * 0.5, alpha),
+        );
+
+        if face.string_face && face.depth > 0.1 {
+            draw_crystal_strings(top1, top2, bottom1, bottom2, pulse);
+        }
+    }
+
+    let highlight = 0.25 + pulse * 0.2;
+    draw_triangle(
+        vec2(center.x - half_w * 0.15, body_top + 6.0),
+        vec2(center.x + half_w * 0.55, body_top + body_h * 0.45),
+        vec2(center.x - half_w * 0.05, body_bottom - 6.0),
+        Color::new(1.0, 0.65, 0.65, highlight),
+    );
+}
+
+fn draw_crystal_strings(top1: Vec2, top2: Vec2, bottom1: Vec2, bottom2: Vec2, pulse: f32) {
+    let count = 18;
+    let glow = Color::new(0.95, 0.9, 0.6, 0.25 + pulse * 0.2);
+    for i in 0..count {
+        let t = i as f32 / (count - 1) as f32;
+        let top = lerp_point(top1, top2, t);
+        let bottom = lerp_point(bottom1, bottom2, 1.0 - t);
+        draw_line(top.x, top.y + 2.0, bottom.x, bottom.y - 2.0, 1.0, glow);
+    }
+}
+
+fn lerp_point(a: Vec2, b: Vec2, t: f32) -> Vec2 {
+    a + (b - a) * t
 }
 
 fn draw_rotated_rect(center: Vec2, size: Vec2, rotation: f32, color: Color) {
@@ -385,12 +529,18 @@ mod tests {
             .count();
         let trees = items.iter().filter(|i| i.kind == SceneryKind::Tree).count();
         let domes = items.iter().filter(|i| i.kind == SceneryKind::Dome).count();
+        let domes_with_crystal = items
+            .iter()
+            .filter(|i| i.kind == SceneryKind::Dome)
+            .filter(|i| i.decorations.contains(&DomeDecoration::Crystal))
+            .count();
 
         assert_eq!(tents, 5);
         assert_eq!(chairs, 5);
         assert_eq!(campfires, 2);
         assert_eq!(trees, 5);
         assert_eq!(domes, 2);
+        assert_eq!(domes_with_crystal, 1);
     }
 
     #[test]
