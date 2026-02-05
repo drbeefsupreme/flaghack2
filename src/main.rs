@@ -36,6 +36,7 @@ struct Game {
     class_name: &'static str,
     flags: Vec<flags::Flag>,
     flag_inventory: u32,
+    wind: flags::Wind,
 }
 
 struct Assets {
@@ -57,6 +58,7 @@ impl Game {
             class_name: "Vexillomancer",
             flags: flags::spawn_initial_flags(FLAG_COUNT_START, field_rect, 40.0),
             flag_inventory: 0,
+            wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
         }
     }
 }
@@ -173,8 +175,9 @@ fn render_dungeon(game: &mut Game) {
 
     handle_flag_interactions(game);
 
+    let time = get_time() as f32;
     for flag in &game.flags {
-        draw_flag(flag.pos);
+        draw_flag(flag, time, game.wind);
     }
 
     draw_rectangle(
@@ -232,8 +235,10 @@ fn handle_flag_interactions(game: &mut Game) {
     }
 }
 
-fn draw_flag(base: Vec2) {
-    let (pole, cloth) = flags::flag_parts(base, FLAG_POLE_HEIGHT, FLAG_POLE_WIDTH, FLAG_CLOTH_SIZE);
+fn draw_flag(flag: &flags::Flag, time: f32, wind: flags::Wind) {
+    let (pole, cloth) =
+        flags::flag_parts(flag.pos, FLAG_POLE_HEIGHT, FLAG_POLE_WIDTH, FLAG_CLOTH_SIZE);
+    let wiggle = flags::cloth_offset(time, wind, flag.phase);
 
     draw_rectangle(
         pole.x,
@@ -243,7 +248,7 @@ fn draw_flag(base: Vec2) {
         Color::new(0.55, 0.44, 0.28, 1.0),
     );
 
-    draw_rectangle(cloth.x, cloth.y, cloth.w, cloth.h, ACCENT);
+    draw_rectangle(cloth.x + wiggle.x, cloth.y + wiggle.y, cloth.w, cloth.h, ACCENT);
 }
 
 fn draw_hud(flag_count: u32) {

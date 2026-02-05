@@ -3,7 +3,32 @@ use macroquad::prelude::{Rect, Vec2};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Flag {
     pub pos: Vec2,
+    pub phase: f32,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Wind {
+    pub direction: Vec2,
+    pub strength: f32,
+}
+
+impl Wind {
+    pub fn new(direction: Vec2, strength: f32) -> Self {
+        let dir = if direction.length() > 0.0 {
+            direction.normalize()
+        } else {
+            Vec2::new(1.0, 0.0)
+        };
+
+        Self {
+            direction: dir,
+            strength: strength.max(0.0),
+        }
+    }
+}
+
+const WIGGLE_AMPLITUDE: f32 = 3.0;
+const WIGGLE_FREQUENCY: f32 = 2.6;
 
 pub fn field_rect(screen_w: f32, screen_h: f32, hud_height: f32) -> Rect {
     Rect::new(0.0, 0.0, screen_w, (screen_h - hud_height).max(0.0))
@@ -31,7 +56,11 @@ pub fn spawn_initial_flags(count: usize, field: Rect, padding: f32) -> Vec<Flag>
         let x = field.x + padding + cell_w * (col as f32 + 0.5);
         let y = field.y + padding + cell_h * (row as f32 + 0.5);
 
-        flags.push(Flag { pos: Vec2::new(x, y) });
+        let pos = Vec2::new(x, y);
+        flags.push(Flag {
+            pos,
+            phase: phase_from_position(pos),
+        });
     }
 
     flags
@@ -63,7 +92,10 @@ pub fn try_place_flag(
     pos.x = pos.x.clamp(field.x, field.x + field.w);
     pos.y = pos.y.clamp(field.y, field.y + field.h);
 
-    flags.push(Flag { pos });
+    flags.push(Flag {
+        pos,
+        phase: phase_from_position(pos),
+    });
     true
 }
 
@@ -85,6 +117,21 @@ pub fn flag_parts(base: Vec2, pole_height: f32, pole_width: f32, cloth_size: Vec
     (pole, cloth)
 }
 
+pub fn cloth_offset(time: f32, wind: Wind, phase: f32) -> Vec2 {
+    if wind.strength == 0.0 {
+        return Vec2::ZERO;
+    }
+
+    let sway = (time * WIGGLE_FREQUENCY + phase).sin();
+    let lift = (time * WIGGLE_FREQUENCY * 0.7 + phase).cos();
+
+    let along = wind.direction * (sway * WIGGLE_AMPLITUDE * wind.strength);
+    let perp = Vec2::new(-wind.direction.y, wind.direction.x)
+        * (lift * WIGGLE_AMPLITUDE * 0.35 * wind.strength);
+
+    along + perp
+}
+
 fn nearest_flag_index(flags: &[Flag], origin: Vec2, radius: f32) -> Option<usize> {
     let mut best_index = None;
     let mut best_dist = radius * radius;
@@ -98,6 +145,10 @@ fn nearest_flag_index(flags: &[Flag], origin: Vec2, radius: f32) -> Option<usize
     }
 
     best_index
+}
+
+fn phase_from_position(pos: Vec2) -> f32 {
+    (pos.x * 0.15 + pos.y * 0.07) % std::f32::consts::TAU
 }
 
 #[cfg(test)]
@@ -124,8 +175,14 @@ mod tests {
     #[test]
     fn try_pickup_flag_removes_nearest() {
         let mut flags = vec![
-            Flag { pos: Vec2::new(10.0, 10.0) },
-            Flag { pos: Vec2::new(30.0, 10.0) },
+            Flag {
+                pos: Vec2::new(10.0, 10.0),
+                phase: 0.0,
+            },
+            Flag {
+                pos: Vec2::new(30.0, 10.0),
+                phase: 1.0,
+            },
         ];
         let picked = try_pickup_flag(&mut flags, Vec2::new(12.0, 10.0), 10.0);
         assert!(picked);
@@ -135,7 +192,10 @@ mod tests {
 
     #[test]
     fn try_pickup_flag_fails_when_out_of_range() {
-        let mut flags = vec![Flag { pos: Vec2::new(100.0, 100.0) }];
+        let mut flags = vec![Flag {
+            pos: Vec2::new(100.0, 100.0),
+            phase: 0.0,
+        }];
         let picked = try_pickup_flag(&mut flags, Vec2::new(0.0, 0.0), 10.0);
         assert!(!picked);
         assert_eq!(flags.len(), 1);
@@ -185,5 +245,20 @@ mod tests {
 
         assert!((cloth.y - pole.y).abs() < f32::EPSILON);
         assert!((cloth.x - (pole.x + pole.w)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn cloth_offset_zero_wind_is_zero() {
+        let wind = Wind::new(Vec2::new(1.0, 0.0), 0.0);
+        let offset = cloth_offset(1.0, wind, 0.5);
+        assert!(offset.length() < 0.0001);
+    }
+
+    #[test]
+    fn cloth_offset_is_bounded_by_amplitude() {
+        let wind = Wind::new(Vec2::new(0.0, -1.0), 1.0);
+        let offset = cloth_offset(0.25, wind, 1.2);
+        let max = WIGGLE_AMPLITUDE * (1.0 + 0.35);
+        assert!(offset.length() <= max + 0.001);
     }
 }
