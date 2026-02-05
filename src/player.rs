@@ -21,6 +21,7 @@ struct PlayerParts {
 
 const BODY_W: f32 = 18.0;
 const BODY_H: f32 = 24.0;
+const BODY_TOP_SCALE: f32 = 0.68;
 const HEAD_RADIUS: f32 = 5.0;
 const HAT_W: f32 = 14.0;
 const HAT_H: f32 = 10.0;
@@ -45,19 +46,12 @@ pub fn draw_player(top_left: Vec2, accent: Color, facing: Facing) {
     let robe_color = Color::new(0.08, 0.08, 0.09, 1.0);
     let outline = Color::new(0.02, 0.02, 0.02, 1.0);
     let (robe_left, robe_right, split) = robe_colors(facing, accent, robe_color);
+    let body_points = body_trapezoid(parts.body);
 
     if split {
-        let half_w = parts.body.w * 0.5;
-        draw_rectangle(parts.body.x, parts.body.y, half_w, parts.body.h, robe_left);
-        draw_rectangle(
-            parts.body.x + half_w,
-            parts.body.y,
-            half_w,
-            parts.body.h,
-            robe_right,
-        );
+        draw_trapezoid_split(body_points, robe_left, robe_right);
     } else {
-        draw_rectangle(parts.body.x, parts.body.y, parts.body.w, parts.body.h, robe_left);
+        draw_trapezoid(body_points, robe_left);
     }
 
     draw_triangle(parts.hat[0], parts.hat[1], parts.hat[2], robe_color);
@@ -134,6 +128,35 @@ fn draw_hand(hand: Hand, color: Color, outline: Color) {
     let _ = hand.side;
     draw_circle(hand.pos.x, hand.pos.y, HAND_RADIUS, color);
     draw_circle_lines(hand.pos.x, hand.pos.y, HAND_RADIUS, 1.0, outline);
+}
+
+fn body_trapezoid(body: Rect) -> [Vec2; 4] {
+    let top_w = body.w * BODY_TOP_SCALE;
+    let inset = (body.w - top_w) * 0.5;
+    let top_left = vec2(body.x + inset, body.y);
+    let top_right = vec2(body.x + inset + top_w, body.y);
+    let bottom_right = vec2(body.x + body.w, body.y + body.h);
+    let bottom_left = vec2(body.x, body.y + body.h);
+
+    [top_left, top_right, bottom_right, bottom_left]
+}
+
+fn draw_trapezoid(points: [Vec2; 4], color: Color) {
+    let [tl, tr, br, bl] = points;
+    draw_triangle(tl, tr, br, color);
+    draw_triangle(tl, br, bl, color);
+}
+
+fn draw_trapezoid_split(points: [Vec2; 4], left: Color, right: Color) {
+    let [tl, tr, br, bl] = points;
+    let top_mid = vec2((tl.x + tr.x) * 0.5, tl.y);
+    let bottom_mid = vec2((bl.x + br.x) * 0.5, bl.y);
+
+    draw_triangle(tl, top_mid, bottom_mid, left);
+    draw_triangle(tl, bottom_mid, bl, left);
+
+    draw_triangle(top_mid, tr, br, right);
+    draw_triangle(top_mid, br, bottom_mid, right);
 }
 
 pub fn facing_from_direction(direction: Vec2) -> Facing {
@@ -257,5 +280,17 @@ mod tests {
 
         assert!((left.hand_left.pos.x - body_center).abs() < 0.01);
         assert!((right.hand_right.pos.x - body_center).abs() < 0.01);
+    }
+
+    #[test]
+    fn robe_trapezoid_has_narrower_top() {
+        let parts = compute_player_parts(vec2(0.0, 0.0), Facing::Down);
+        let [tl, tr, br, bl] = body_trapezoid(parts.body);
+        let top_w = (tr.x - tl.x).abs();
+        let bottom_w = (br.x - bl.x).abs();
+        assert!(top_w < bottom_w);
+        let top_center = (tl.x + tr.x) * 0.5;
+        let bottom_center = (bl.x + br.x) * 0.5;
+        assert!((top_center - bottom_center).abs() < 0.01);
     }
 }
