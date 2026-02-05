@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 
 mod assets;
 mod movement;
+mod flags;
 
 const SCREEN_W: i32 = 960;
 const SCREEN_H: i32 = 540;
@@ -9,6 +10,13 @@ const ACCENT: Color = Color::new(1.0, 0.9, 0.0, 1.0);
 const FIELD_GREEN: Color = Color::new(0.06, 0.35, 0.12, 1.0);
 const PLAYER_SIZE: f32 = 26.0;
 const PLAYER_SPEED: f32 = 220.0;
+const HUD_HEIGHT: f32 = 48.0;
+const FLAG_INTERACT_RADIUS: f32 = 48.0;
+const FLAG_POLE_HEIGHT: f32 = 36.0;
+const FLAG_POLE_WIDTH: f32 = 3.0;
+const FLAG_CLOTH_SIZE: Vec2 = Vec2::new(22.0, 14.0);
+const FLAG_PLACE_OFFSET: Vec2 = Vec2::new(28.0, 0.0);
+const FLAG_COUNT_START: usize = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scene {
@@ -26,6 +34,8 @@ struct Game {
     scene: Scene,
     player: Player,
     class_name: &'static str,
+    flags: Vec<flags::Flag>,
+    flag_inventory: u32,
 }
 
 struct Assets {
@@ -35,6 +45,7 @@ struct Assets {
 
 impl Game {
     fn new() -> Self {
+        let field_rect = flags::field_rect(SCREEN_W as f32, SCREEN_H as f32, HUD_HEIGHT);
         Self {
             scene: Scene::Title,
             player: Player {
@@ -44,6 +55,8 @@ impl Game {
                 ),
             },
             class_name: "Vexillomancer",
+            flags: flags::spawn_initial_flags(FLAG_COUNT_START, field_rect, 40.0),
+            flag_inventory: 0,
         }
     }
 }
@@ -158,6 +171,12 @@ fn render_dungeon(game: &mut Game) {
 
     handle_movement(game);
 
+    handle_flag_interactions(game);
+
+    for flag in &game.flags {
+        draw_flag(flag.pos);
+    }
+
     draw_rectangle(
         game.player.pos.x,
         game.player.pos.y,
@@ -166,11 +185,7 @@ fn render_dungeon(game: &mut Game) {
         BLACK,
     );
 
-    let pos_text = format!(
-        "Player position: ({:.1}, {:.1})",
-        game.player.pos.x, game.player.pos.y
-    );
-    draw_centered(&pos_text, 230.0, 22.0, ACCENT);
+    draw_hud(game.flag_inventory);
 
     if is_key_pressed(KeyCode::Escape) {
         game.scene = Scene::ClassSelect;
@@ -189,9 +204,54 @@ fn handle_movement(game: &mut Game) {
     game.player.pos += delta;
 
     let max_x = (screen_width() - PLAYER_SIZE).max(0.0);
-    let max_y = (screen_height() - PLAYER_SIZE).max(0.0);
+    let max_y = (screen_height() - HUD_HEIGHT - PLAYER_SIZE).max(0.0);
     game.player.pos.x = game.player.pos.x.clamp(0.0, max_x);
     game.player.pos.y = game.player.pos.y.clamp(0.0, max_y);
+}
+
+fn handle_flag_interactions(game: &mut Game) {
+    let field = flags::field_rect(screen_width(), screen_height(), HUD_HEIGHT);
+
+    if is_mouse_button_pressed(MouseButton::Left) {
+        let placed = flags::try_place_flag(
+            &mut game.flags,
+            &mut game.flag_inventory,
+            game.player.pos,
+            FLAG_PLACE_OFFSET,
+            field,
+        );
+        if placed {
+            return;
+        }
+    }
+
+    if is_mouse_button_pressed(MouseButton::Right) {
+        if flags::try_pickup_flag(&mut game.flags, game.player.pos, FLAG_INTERACT_RADIUS) {
+            game.flag_inventory = game.flag_inventory.saturating_add(1);
+        }
+    }
+}
+
+fn draw_flag(base: Vec2) {
+    let (pole, cloth) = flags::flag_parts(base, FLAG_POLE_HEIGHT, FLAG_POLE_WIDTH, FLAG_CLOTH_SIZE);
+
+    draw_rectangle(
+        pole.x,
+        pole.y,
+        pole.w,
+        pole.h,
+        Color::new(0.55, 0.44, 0.28, 1.0),
+    );
+
+    draw_rectangle(cloth.x, cloth.y, cloth.w, cloth.h, ACCENT);
+}
+
+fn draw_hud(flag_count: u32) {
+    let y = screen_height() - HUD_HEIGHT;
+    draw_rectangle(0.0, y, screen_width(), HUD_HEIGHT, BLACK);
+
+    let text = format!("Flags: {}", flag_count);
+    draw_text(&text, 16.0, y + 32.0, 26.0, ACCENT);
 }
 
 fn draw_centered(text: &str, y: f32, size: f32, color: Color) {
