@@ -3,6 +3,7 @@ use macroquad::prelude::*;
 mod assets;
 mod movement;
 mod flags;
+mod scenery;
 
 const SCREEN_W: i32 = 960;
 const SCREEN_H: i32 = 540;
@@ -37,6 +38,7 @@ struct Game {
     flags: Vec<flags::Flag>,
     flag_inventory: u32,
     wind: flags::Wind,
+    scenery: Vec<scenery::SceneryItem>,
 }
 
 struct Assets {
@@ -59,6 +61,7 @@ impl Game {
             flags: flags::spawn_initial_flags(FLAG_COUNT_START, field_rect, 40.0),
             flag_inventory: 0,
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
+            scenery: scenery::spawn_scenery(field_rect),
         }
     }
 }
@@ -176,6 +179,7 @@ fn render_dungeon(game: &mut Game) {
     handle_flag_interactions(game);
 
     let time = get_time() as f32;
+    scenery::draw_scenery(&game.scenery, time);
     for flag in &game.flags {
         draw_flag(flag, time, game.wind);
     }
