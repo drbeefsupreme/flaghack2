@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
+use crate::fire;
 use crate::scale;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9,6 +10,7 @@ pub enum SceneryKind {
     Chair,
     Campfire,
     CrowBase,
+    Crow,
     Dome,
 }
 
@@ -108,6 +110,14 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
         variant: 0,
         decorations: Vec::new(),
     });
+    items.push(SceneryItem {
+        kind: SceneryKind::Crow,
+        pos: crow_base_pos,
+        scale: 1.0,
+        rotation: 0.0,
+        variant: 0,
+        decorations: Vec::new(),
+    });
 
     let trees = [
         vec2(30.0, 50.0),
@@ -158,6 +168,7 @@ pub fn draw_scenery(items: &[SceneryItem], time: f32) {
             SceneryKind::Chair => draw_chair(item.pos, item.rotation),
             SceneryKind::Campfire => draw_campfire(item.pos, time),
             SceneryKind::CrowBase => draw_crow_base(item.pos, time),
+            SceneryKind::Crow => draw_crow(item.pos, time),
             SceneryKind::Dome => draw_geodesic_dome(item.pos, time, &item.decorations),
         }
     }
@@ -264,20 +275,11 @@ fn draw_campfire(pos: Vec2, time: f32) {
     draw_rectangle(pos.x - 12.0 * s, pos.y - 3.0 * s, 24.0 * s, 6.0 * s, log_color);
     draw_rectangle(pos.x - 8.0 * s, pos.y - 6.0 * s, 16.0 * s, 5.0 * s, log_color);
 
-    let flicker = (time * 3.0).sin() * 3.0 * s;
-
-    draw_triangle(
-        vec2(pos.x, pos.y - 26.0 * s - flicker),
-        vec2(pos.x - 9.0 * s, pos.y - 6.0 * s),
-        vec2(pos.x + 9.0 * s, pos.y - 6.0 * s),
-        Color::new(1.0, 0.42, 0.21, 1.0),
-    );
-
-    draw_triangle(
-        vec2(pos.x, pos.y - 18.0 * s - flicker * 0.5),
-        vec2(pos.x - 5.0 * s, pos.y - 6.0 * s),
-        vec2(pos.x + 5.0 * s, pos.y - 6.0 * s),
-        Color::new(1.0, 0.85, 0.24, 1.0),
+    let fire_pos = vec2(pos.x, pos.y - 8.0 * s);
+    let fire_size = vec2(22.0 * s, 34.0 * s);
+    fire::draw_fire(
+        fire::Fire::new(fire_pos, fire_size),
+        time,
     );
 }
 
@@ -363,6 +365,99 @@ fn draw_crow_base_flame(tl: Vec2, tr: Vec2, bl: Vec2, br: Vec2, time: f32) {
         vec2(center.x + width * 0.3, center.y + height * 0.2),
         Color::new(1.0, 0.8, 0.3, 0.9),
     );
+}
+
+fn draw_crow(pos: Vec2, time: f32) {
+    let s = scale::MODEL_SCALE;
+    let base_height = 140.0 * s;
+    let perch = vec2(pos.x, pos.y - base_height - 16.0 * s);
+
+    let metal = Color::new(1.0, 0.45, 0.12, 1.0);
+    let metal_dim = Color::new(0.7, 0.25, 0.08, 0.9);
+    let glow = Color::new(1.0, 0.35, 0.15, 0.28);
+
+    let body_center = perch + vec2(0.0, -18.0 * s);
+    let body_top = body_center + vec2(0.0, -22.0 * s);
+    let body_bottom = body_center + vec2(0.0, 26.0 * s);
+    let head_radius = 6.0 * s;
+    let head = body_top + vec2(8.0 * s, -16.0 * s);
+    let beak = head + vec2(18.0 * s, -2.0 * s);
+    let tail = body_bottom + vec2(-10.0 * s, 16.0 * s);
+
+    let mast_left = vec2(head.x - 6.0 * s, head.y + head_radius * 0.2);
+    let mast_right = vec2(head.x + 6.0 * s, head.y + head_radius * 0.2);
+    draw_crow_glow_line(vec2(mast_left.x, perch.y), mast_left, 3.0 * s, metal, glow);
+    draw_crow_glow_line(vec2(mast_right.x, perch.y), mast_right, 3.0 * s, metal, glow);
+
+    draw_triangle(
+        body_top + vec2(-10.0 * s, 4.0 * s),
+        body_top + vec2(12.0 * s, 4.0 * s),
+        body_bottom + vec2(0.0, -2.0 * s),
+        metal_dim,
+    );
+    draw_crow_glow_line(body_top + vec2(-10.0 * s, 4.0 * s), body_top + vec2(12.0 * s, 4.0 * s), 2.2 * s, metal, glow);
+    draw_crow_glow_line(body_top + vec2(12.0 * s, 4.0 * s), body_bottom + vec2(0.0, -2.0 * s), 2.2 * s, metal, glow);
+    draw_crow_glow_line(body_bottom + vec2(0.0, -2.0 * s), body_top + vec2(-10.0 * s, 4.0 * s), 2.2 * s, metal, glow);
+
+    draw_circle(head.x, head.y, head_radius, metal_dim);
+    draw_crow_glow_line(head, beak, 2.0 * s, metal, glow);
+
+    draw_crow_glow_line(body_bottom, tail, 2.0 * s, metal, glow);
+    draw_crow_glow_line(body_bottom + vec2(4.0 * s, 6.0 * s), tail + vec2(10.0 * s, 10.0 * s), 2.0 * s, metal, glow);
+
+    let left_upper = [
+        body_center + vec2(-10.0 * s, -8.0 * s),
+        body_center + vec2(-60.0 * s, -24.0 * s),
+        body_center + vec2(-120.0 * s, -10.0 * s),
+        body_center + vec2(-180.0 * s, 8.0 * s),
+        body_center + vec2(-220.0 * s, -6.0 * s),
+    ];
+    let left_lower = [
+        body_center + vec2(-6.0 * s, 18.0 * s),
+        body_center + vec2(-50.0 * s, 8.0 * s),
+        body_center + vec2(-110.0 * s, 22.0 * s),
+        body_center + vec2(-170.0 * s, 26.0 * s),
+        body_center + vec2(-210.0 * s, 14.0 * s),
+    ];
+
+    draw_wing_wire(&left_upper, &left_lower, metal, glow, 2.0 * s);
+
+    let right_upper = [
+        body_center + vec2(10.0 * s, -8.0 * s),
+        body_center + vec2(60.0 * s, -24.0 * s),
+        body_center + vec2(120.0 * s, -10.0 * s),
+        body_center + vec2(180.0 * s, 8.0 * s),
+        body_center + vec2(220.0 * s, -6.0 * s),
+    ];
+    let right_lower = [
+        body_center + vec2(6.0 * s, 18.0 * s),
+        body_center + vec2(50.0 * s, 8.0 * s),
+        body_center + vec2(110.0 * s, 22.0 * s),
+        body_center + vec2(170.0 * s, 26.0 * s),
+        body_center + vec2(210.0 * s, 14.0 * s),
+    ];
+
+    draw_wing_wire(&right_upper, &right_lower, metal, glow, 2.0 * s);
+
+    let fire_pos = beak + vec2(2.0 * s, 0.0);
+    let mut flame = fire::Fire::new(fire_pos, vec2(26.0 * s, 52.0 * s));
+    flame.angle = -std::f32::consts::FRAC_PI_4;
+    flame.intensity = 1.2;
+    fire::draw_fire(flame, time);
+}
+
+fn draw_wing_wire(upper: &[Vec2; 5], lower: &[Vec2; 5], core: Color, glow: Color, width: f32) {
+    for i in 0..upper.len() - 1 {
+        draw_crow_glow_line(upper[i], upper[i + 1], width, core, glow);
+        draw_crow_glow_line(lower[i], lower[i + 1], width, core, glow);
+        draw_crow_glow_line(upper[i], lower[i], width, core, glow);
+    }
+    draw_crow_glow_line(*upper.last().unwrap(), *lower.last().unwrap(), width, core, glow);
+}
+
+fn draw_crow_glow_line(a: Vec2, b: Vec2, width: f32, core: Color, glow: Color) {
+    draw_line(a.x, a.y, b.x, b.y, width * 2.2, glow);
+    draw_line(a.x, a.y, b.x, b.y, width, core);
 }
 
 fn draw_crow_base_runes(tl: Vec2, tr: Vec2, bl: Vec2, br: Vec2, time: f32) {
@@ -813,6 +908,7 @@ mod tests {
             .filter(|i| i.kind == SceneryKind::Campfire)
             .count();
         let crow_bases = items.iter().filter(|i| i.kind == SceneryKind::CrowBase).count();
+        let crows = items.iter().filter(|i| i.kind == SceneryKind::Crow).count();
         let trees = items.iter().filter(|i| i.kind == SceneryKind::Tree).count();
         let domes = items.iter().filter(|i| i.kind == SceneryKind::Dome).count();
         let domes_with_crystal = items
@@ -825,6 +921,7 @@ mod tests {
         assert_eq!(chairs, 5);
         assert_eq!(campfires, 2);
         assert_eq!(crow_bases, 1);
+        assert_eq!(crows, 1);
         assert_eq!(trees, 5);
         assert_eq!(domes, 2);
         assert_eq!(domes_with_crystal, 1);

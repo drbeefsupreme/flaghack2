@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 
 mod assets;
 mod camera;
+mod fire;
 mod scale;
 mod movement;
 mod flags;
