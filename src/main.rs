@@ -31,6 +31,7 @@ const MAP_TILE_DIR: &str = "assets/map/tiles";
 const MAP_TRAVEL_MINUTES: f32 = 10.0;
 const SPEED_MULTIPLIER: f32 = 4.0;
 const MAP_REGION_COLOR: Color = Color::new(0.1, 0.6, 0.2, 1.0);
+const PLAYER_SPAWN_POS: Vec2 = Vec2::new(5015.0, 3292.0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scene {
@@ -94,10 +95,7 @@ impl Game {
         Self {
             scene: Scene::Title,
             player: Player {
-                pos: vec2(
-                    map.width * 0.5 - player::PLAYER_WIDTH * 0.5,
-                    map.height * 0.5 - player::PLAYER_HEIGHT * 0.5,
-                ),
+                pos: PLAYER_SPAWN_POS,
                 facing: player::Facing::Down,
             },
             class_name: "Vexillomancer",
