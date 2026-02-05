@@ -8,6 +8,7 @@ pub enum SceneryKind {
     Tent,
     Chair,
     Campfire,
+    CrowBase,
     Dome,
 }
 
@@ -98,6 +99,16 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
         });
     }
 
+    let crow_base_pos = vec2(5065.0, 3327.0);
+    items.push(SceneryItem {
+        kind: SceneryKind::CrowBase,
+        pos: crow_base_pos,
+        scale: 1.0,
+        rotation: 0.0,
+        variant: 0,
+        decorations: Vec::new(),
+    });
+
     let trees = [
         vec2(30.0, 50.0),
         vec2(770.0, 40.0),
@@ -146,6 +157,7 @@ pub fn draw_scenery(items: &[SceneryItem], time: f32) {
             SceneryKind::Tent => draw_tent(item.pos, item.variant),
             SceneryKind::Chair => draw_chair(item.pos, item.rotation),
             SceneryKind::Campfire => draw_campfire(item.pos, time),
+            SceneryKind::CrowBase => draw_crow_base(item.pos, time),
             SceneryKind::Dome => draw_geodesic_dome(item.pos, time, &item.decorations),
         }
     }
@@ -268,6 +280,229 @@ fn draw_campfire(pos: Vec2, time: f32) {
         Color::new(1.0, 0.85, 0.24, 1.0),
     );
 }
+
+fn draw_crow_base(pos: Vec2, time: f32) {
+    let s = scale::MODEL_SCALE;
+    let bottom_w = 280.0 * s;
+    let top_w = 170.0 * s;
+    let height = 140.0 * s;
+    let base_y = pos.y;
+    let top_y = pos.y - height;
+
+    let bl = vec2(pos.x - bottom_w * 0.5, base_y);
+    let br = vec2(pos.x + bottom_w * 0.5, base_y);
+    let tl = vec2(pos.x - top_w * 0.5, top_y);
+    let tr = vec2(pos.x + top_w * 0.5, top_y);
+    let top_mid = lerp_point(tl, tr, 0.5);
+    let bottom_mid = lerp_point(bl, br, 0.5);
+
+    let shadow = Color::new(0.0, 0.0, 0.0, 0.35);
+    draw_ellipse(
+        pos.x,
+        pos.y + 4.0 * s,
+        bottom_w * 0.55,
+        height * 0.22,
+        0.0,
+        shadow,
+    );
+
+    let left_color = Color::new(0.08, 0.08, 0.10, 1.0);
+    let right_color = Color::new(0.12, 0.12, 0.15, 1.0);
+
+    draw_triangle(tl, top_mid, bottom_mid, left_color);
+    draw_triangle(tl, bottom_mid, bl, left_color);
+    draw_triangle(top_mid, tr, br, right_color);
+    draw_triangle(top_mid, br, bottom_mid, right_color);
+
+    let inner_tl = trapezoid_point(tl, tr, bl, br, 0.08, 0.12);
+    let inner_tr = trapezoid_point(tl, tr, bl, br, 0.92, 0.12);
+    let inner_br = trapezoid_point(tl, tr, bl, br, 0.92, 0.88);
+    let inner_bl = trapezoid_point(tl, tr, bl, br, 0.08, 0.88);
+    let inner_fill = Color::new(0.06, 0.06, 0.08, 1.0);
+    draw_triangle(inner_tl, inner_tr, inner_br, inner_fill);
+    draw_triangle(inner_tl, inner_br, inner_bl, inner_fill);
+
+    let edge = Color::new(0.25, 0.28, 0.34, 0.8);
+    let edge_w = 1.4 * s;
+    draw_line(tl.x, tl.y, tr.x, tr.y, edge_w, edge);
+    draw_line(tr.x, tr.y, br.x, br.y, edge_w, edge);
+    draw_line(br.x, br.y, bl.x, bl.y, edge_w, edge);
+    draw_line(bl.x, bl.y, tl.x, tl.y, edge_w, edge);
+
+    let inner_edge = Color::new(0.18, 0.2, 0.28, 0.8);
+    let inner_w = 1.1 * s;
+    draw_line(inner_tl.x, inner_tl.y, inner_tr.x, inner_tr.y, inner_w, inner_edge);
+    draw_line(inner_tr.x, inner_tr.y, inner_br.x, inner_br.y, inner_w, inner_edge);
+    draw_line(inner_br.x, inner_br.y, inner_bl.x, inner_bl.y, inner_w, inner_edge);
+    draw_line(inner_bl.x, inner_bl.y, inner_tl.x, inner_tl.y, inner_w, inner_edge);
+
+    draw_crow_base_flame(tl, tr, bl, br, time);
+    draw_crow_base_runes(inner_tl, inner_tr, inner_bl, inner_br, time);
+}
+
+fn draw_crow_base_flame(tl: Vec2, tr: Vec2, bl: Vec2, br: Vec2, time: f32) {
+    let center = trapezoid_point(tl, tr, bl, br, 0.5, 0.58);
+    let s = scale::MODEL_SCALE;
+    let width = 28.0 * s;
+    let height = 36.0 * s;
+    let flicker = (time * 3.2).sin() * 1.8 * s;
+
+    let glow = Color::new(1.0, 0.32, 0.05, 0.35);
+    draw_circle(center.x, center.y + 8.0 * s, 22.0 * s, glow);
+
+    draw_triangle(
+        vec2(center.x, center.y - height * 0.55 - flicker),
+        vec2(center.x - width * 0.5, center.y + height * 0.3),
+        vec2(center.x + width * 0.5, center.y + height * 0.3),
+        Color::new(0.95, 0.38, 0.12, 0.9),
+    );
+
+    draw_triangle(
+        vec2(center.x, center.y - height * 0.25 - flicker * 0.5),
+        vec2(center.x - width * 0.3, center.y + height * 0.2),
+        vec2(center.x + width * 0.3, center.y + height * 0.2),
+        Color::new(1.0, 0.8, 0.3, 0.9),
+    );
+}
+
+fn draw_crow_base_runes(tl: Vec2, tr: Vec2, bl: Vec2, br: Vec2, time: f32) {
+    let rows = [
+        (0.32, 7, 0.55, 1usize),
+        (0.72, 10, 0.5, 5usize),
+    ];
+
+    for (v, count, size_scale, seed) in rows {
+        draw_rune_row(tl, tr, bl, br, time, v, count, size_scale, seed);
+    }
+
+    let left = trapezoid_point(tl, tr, bl, br, 0.12, 0.68);
+    let right = trapezoid_point(tl, tr, bl, br, 0.88, 0.68);
+    let side_size = vec2(14.0 * scale::MODEL_SCALE, 20.0 * scale::MODEL_SCALE);
+    draw_rune_glyph(6, left, side_size, time, 2.4);
+    draw_rune_glyph(3, right, side_size, time, 4.1);
+}
+
+fn draw_rune_row(
+    tl: Vec2,
+    tr: Vec2,
+    bl: Vec2,
+    br: Vec2,
+    time: f32,
+    v: f32,
+    count: usize,
+    size_scale: f32,
+    seed: usize,
+) {
+    let left = lerp_point(tl, bl, v);
+    let right = lerp_point(tr, br, v);
+    let row_w = right.x - left.x;
+    let step = row_w / count as f32;
+    let glyph_w = step * size_scale;
+    let glyph_h = glyph_w * 1.25;
+    let base_y = left.y;
+
+    for i in 0..count {
+        let center = vec2(left.x + step * (i as f32 + 0.5), base_y);
+        let phase = seed as f32 * 0.9 + i as f32 * 0.65 + v * 4.2;
+        draw_rune_glyph((i + seed) % RUNE_STROKES.len(), center, vec2(glyph_w, glyph_h), time, phase);
+    }
+}
+
+fn draw_rune_glyph(index: usize, center: Vec2, size: Vec2, time: f32, phase: f32) {
+    let intensity = 0.55 + (time * 2.1 + phase).sin() * 0.25 + (time * 0.6 + phase).sin() * 0.2;
+    let pulse = intensity.clamp(0.2, 0.95);
+    let base = Color::new(0.92, 0.25, 1.0, 1.0);
+    let alt = Color::new(0.2, 0.9, 1.0, 1.0);
+    let mix = ((time * 0.45 + phase * 0.7).sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+    let color = lerp_color(base, alt, mix);
+
+    let line_w = (size.y * 0.06).max(0.6 * scale::MODEL_SCALE);
+    let glow_w = line_w * 3.2;
+    let core = Color::new(color.r, color.g, color.b, 0.7 + pulse * 0.3);
+    let glow = Color::new(color.r, color.g, color.b, 0.18 + pulse * 0.35);
+
+    let strokes = &RUNE_STROKES[index % RUNE_STROKES.len()];
+    let stroke_count = RUNE_COUNTS[index % RUNE_COUNTS.len()];
+    for stroke in strokes.iter().take(stroke_count) {
+        let a = vec2(
+            center.x + (stroke.0 - 0.5) * size.x,
+            center.y + (stroke.1 - 0.5) * size.y,
+        );
+        let b = vec2(
+            center.x + (stroke.2 - 0.5) * size.x,
+            center.y + (stroke.3 - 0.5) * size.y,
+        );
+        draw_line(a.x, a.y, b.x, b.y, glow_w, glow);
+        draw_line(a.x, a.y, b.x, b.y, line_w, core);
+    }
+
+    if index % 3 == 0 {
+        draw_circle(center.x, center.y + size.y * 0.2, size.x * 0.08, glow);
+    }
+}
+
+type RuneStroke = (f32, f32, f32, f32);
+
+const RUNE_STROKES: [[RuneStroke; 5]; 8] = [
+    [
+        (0.2, 0.1, 0.2, 0.9),
+        (0.2, 0.1, 0.85, 0.4),
+        (0.2, 0.5, 0.85, 0.9),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+    ],
+    [
+        (0.5, 0.1, 0.5, 0.9),
+        (0.5, 0.1, 0.2, 0.4),
+        (0.5, 0.1, 0.8, 0.4),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+    ],
+    [
+        (0.2, 0.2, 0.8, 0.2),
+        (0.2, 0.2, 0.2, 0.8),
+        (0.8, 0.2, 0.8, 0.8),
+        (0.2, 0.8, 0.8, 0.8),
+        (0.0, 0.0, 0.0, 0.0),
+    ],
+    [
+        (0.2, 0.2, 0.8, 0.8),
+        (0.8, 0.2, 0.2, 0.8),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+    ],
+    [
+        (0.2, 0.2, 0.8, 0.2),
+        (0.8, 0.2, 0.2, 0.5),
+        (0.2, 0.5, 0.8, 0.8),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+    ],
+    [
+        (0.2, 0.1, 0.2, 0.9),
+        (0.8, 0.1, 0.8, 0.9),
+        (0.2, 0.3, 0.8, 0.3),
+        (0.2, 0.6, 0.8, 0.6),
+        (0.0, 0.0, 0.0, 0.0),
+    ],
+    [
+        (0.2, 0.15, 0.2, 0.9),
+        (0.2, 0.55, 0.8, 0.25),
+        (0.2, 0.55, 0.8, 0.85),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+    ],
+    [
+        (0.2, 0.2, 0.2, 0.8),
+        (0.8, 0.2, 0.8, 0.8),
+        (0.2, 0.8, 0.8, 0.8),
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 0.0, 0.0, 0.0),
+    ],
+];
+
+const RUNE_COUNTS: [usize; 8] = [3, 3, 4, 2, 3, 4, 3, 3];
 
 fn draw_tree(pos: Vec2, scale: f32) {
     let trunk_color = Color::new(0.36, 0.25, 0.20, 1.0);
@@ -523,6 +758,21 @@ fn lerp_point(a: Vec2, b: Vec2, t: f32) -> Vec2 {
     a + (b - a) * t
 }
 
+fn trapezoid_point(tl: Vec2, tr: Vec2, bl: Vec2, br: Vec2, u: f32, v: f32) -> Vec2 {
+    let top = lerp_point(tl, tr, u);
+    let bottom = lerp_point(bl, br, u);
+    lerp_point(top, bottom, v)
+}
+
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    Color::new(
+        a.r + (b.r - a.r) * t,
+        a.g + (b.g - a.g) * t,
+        a.b + (b.b - a.b) * t,
+        a.a + (b.a - a.a) * t,
+    )
+}
+
 fn draw_rotated_rect(center: Vec2, size: Vec2, rotation: f32, color: Color) {
     draw_rectangle_ex(
         center.x,
@@ -562,6 +812,7 @@ mod tests {
             .iter()
             .filter(|i| i.kind == SceneryKind::Campfire)
             .count();
+        let crow_bases = items.iter().filter(|i| i.kind == SceneryKind::CrowBase).count();
         let trees = items.iter().filter(|i| i.kind == SceneryKind::Tree).count();
         let domes = items.iter().filter(|i| i.kind == SceneryKind::Dome).count();
         let domes_with_crystal = items
@@ -573,6 +824,7 @@ mod tests {
         assert_eq!(tents, 5);
         assert_eq!(chairs, 5);
         assert_eq!(campfires, 2);
+        assert_eq!(crow_bases, 1);
         assert_eq!(trees, 5);
         assert_eq!(domes, 2);
         assert_eq!(domes_with_crystal, 1);
