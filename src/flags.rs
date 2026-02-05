@@ -31,10 +31,6 @@ impl Wind {
 const WIGGLE_AMPLITUDE: f32 = 3.0;
 const WIGGLE_FREQUENCY: f32 = 2.6;
 
-pub fn field_rect(screen_w: f32, screen_h: f32, hud_height: f32) -> Rect {
-    Rect::new(0.0, 0.0, screen_w, (screen_h - hud_height).max(0.0))
-}
-
 pub fn spawn_initial_flags(count: usize, field: Rect, padding: f32) -> Vec<Flag> {
     if count == 0 {
         return Vec::new();
