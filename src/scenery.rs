@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use macroquad::rand::gen_range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SceneryKind {
@@ -6,6 +7,7 @@ pub enum SceneryKind {
     Tent,
     Chair,
     Campfire,
+    Dome,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -19,6 +21,10 @@ pub struct SceneryItem {
 
 const BASE_W: f32 = 800.0;
 const BASE_H: f32 = 600.0;
+const DOME_COUNT: usize = 2;
+const DOME_PADDING: f32 = 120.0;
+pub const DOME_RADIUS: f32 = 100.0;
+pub const DOME_HEIGHT: f32 = 100.0;
 
 const TENT_COLORS: [Color; 5] = [
     Color::new(0.88, 0.48, 0.22, 1.0),
@@ -102,6 +108,17 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
         });
     }
 
+    for _ in 0..DOME_COUNT {
+        let pos = random_position(field, DOME_PADDING);
+        items.push(SceneryItem {
+            kind: SceneryKind::Dome,
+            pos,
+            scale: 1.0,
+            rotation: 0.0,
+            variant: 0,
+        });
+    }
+
     items
 }
 
@@ -112,6 +129,7 @@ pub fn draw_scenery(items: &[SceneryItem], time: f32) {
             SceneryKind::Tent => draw_tent(item.pos, item.variant),
             SceneryKind::Chair => draw_chair(item.pos, item.rotation),
             SceneryKind::Campfire => draw_campfire(item.pos, time),
+            SceneryKind::Dome => draw_geodesic_dome(item.pos),
         }
     }
 }
@@ -126,6 +144,19 @@ fn map_position(field: Rect, base: Vec2) -> Vec2 {
 fn tree_scale_from_pos(pos: Vec2) -> f32 {
     let seed = (pos.x * 0.037 + pos.y * 0.051).sin().abs();
     0.8 + seed * 0.4
+}
+
+fn random_position(field: Rect, padding: f32) -> Vec2 {
+    let min_x = field.x + padding;
+    let max_x = field.x + field.w - padding;
+    let min_y = field.y + padding;
+    let max_y = field.y + field.h - padding;
+
+    if max_x <= min_x || max_y <= min_y {
+        return vec2(field.x + field.w * 0.5, field.y + field.h * 0.5);
+    }
+
+    vec2(gen_range(min_x, max_x), gen_range(min_y, max_y))
 }
 
 fn draw_tent(pos: Vec2, variant: u8) {
@@ -234,6 +265,85 @@ fn draw_tree(pos: Vec2, scale: f32) {
     );
 }
 
+fn draw_geodesic_dome(center: Vec2) {
+    let radius = DOME_RADIUS;
+    let height = DOME_HEIGHT;
+    let squash = 0.4;
+
+    #[derive(Clone, Copy)]
+    struct DomeVertex {
+        pos: Vec2,
+        depth: f32,
+    }
+
+    let make_ring = |count: usize, r_frac: f32, h_frac: f32, offset: f32| -> Vec<DomeVertex> {
+        let r = radius * r_frac;
+        let ring_squash = squash * (1.0 - h_frac * 0.4);
+        let cy = center.y - height * h_frac;
+        let mut verts = Vec::with_capacity(count);
+        for i in 0..count {
+            let a = (i as f32 / count as f32) * std::f32::consts::TAU + offset;
+            verts.push(DomeVertex {
+                pos: vec2(center.x + a.cos() * r, cy + a.sin() * r * ring_squash),
+                depth: a.sin(),
+            });
+        }
+        verts
+    };
+
+    let base = make_ring(10, 1.0, 0.0, 0.0);
+    let mid = make_ring(8, 0.72, 0.38, std::f32::consts::PI / 8.0);
+    let top = make_ring(5, 0.38, 0.72, std::f32::consts::PI / 10.0);
+    let apex = DomeVertex {
+        pos: vec2(center.x, center.y - height),
+        depth: 0.0,
+    };
+
+    let edge_color = |d: f32| Color::new(160.0 / 255.0, 210.0 / 255.0, 250.0 / 255.0, d);
+
+    let mut edge = |v1: DomeVertex, v2: DomeVertex| {
+        let d = (v1.depth + v2.depth) * 0.5;
+        let alpha = 0.2 + d.max(0.0) * 0.4;
+        draw_line(v1.pos.x, v1.pos.y, v2.pos.x, v2.pos.y, 1.0, edge_color(alpha));
+    };
+
+    let ring = |verts: &[DomeVertex], edge_fn: &mut dyn FnMut(DomeVertex, DomeVertex)| {
+        for i in 0..verts.len() {
+            let next = (i + 1) % verts.len();
+            edge_fn(verts[i], verts[next]);
+        }
+    };
+
+    let connect =
+        |lower: &[DomeVertex], upper: &[DomeVertex], edge_fn: &mut dyn FnMut(DomeVertex, DomeVertex)| {
+            for i in 0..upper.len() {
+                let li = ((i as f32 / upper.len() as f32) * lower.len() as f32).round() as usize
+                    % lower.len();
+                edge_fn(upper[i], lower[li]);
+                edge_fn(upper[i], lower[(li + 1) % lower.len()]);
+            }
+        };
+
+    ring(&base, &mut edge);
+    ring(&mid, &mut edge);
+    ring(&top, &mut edge);
+    connect(&base, &mid, &mut edge);
+    connect(&mid, &top, &mut edge);
+    for v in &top {
+        edge(*v, apex);
+    }
+
+    draw_ellipse_lines(
+        center.x,
+        center.y + 2.0,
+        radius + 5.0,
+        (radius + 5.0) * squash,
+        0.0,
+        1.0,
+        Color::new(160.0 / 255.0, 210.0 / 255.0, 250.0 / 255.0, 0.3),
+    );
+}
+
 fn draw_rotated_rect(center: Vec2, size: Vec2, rotation: f32, color: Color) {
     draw_rectangle_ex(
         center.x,
@@ -260,6 +370,7 @@ fn rotate_point(point: Vec2, origin: Vec2, angle: f32) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::player;
 
     #[test]
     fn spawn_scenery_has_expected_counts() {
@@ -273,11 +384,13 @@ mod tests {
             .filter(|i| i.kind == SceneryKind::Campfire)
             .count();
         let trees = items.iter().filter(|i| i.kind == SceneryKind::Tree).count();
+        let domes = items.iter().filter(|i| i.kind == SceneryKind::Dome).count();
 
         assert_eq!(tents, 5);
         assert_eq!(chairs, 5);
         assert_eq!(campfires, 2);
         assert_eq!(trees, 5);
+        assert_eq!(domes, 2);
     }
 
     #[test]
@@ -296,5 +409,12 @@ mod tests {
         let scale = tree_scale_from_pos(vec2(120.0, 260.0));
         assert!(scale >= 0.8);
         assert!(scale <= 1.2);
+    }
+
+    #[test]
+    fn dome_large_enough_for_multiple_players() {
+        let diameter = DOME_RADIUS * 2.0;
+        assert!(diameter >= player::PLAYER_WIDTH * 4.0);
+        assert!(DOME_HEIGHT >= player::PLAYER_HEIGHT * 2.0);
     }
 }
