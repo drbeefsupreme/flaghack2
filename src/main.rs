@@ -32,6 +32,7 @@ enum Scene {
 #[derive(Clone, Copy, Debug)]
 struct Player {
     pos: Vec2,
+    facing: player::Facing,
 }
 
 struct Game {
@@ -62,6 +63,7 @@ impl Game {
                     SCREEN_W as f32 * 0.5 - player::PLAYER_WIDTH * 0.5,
                     SCREEN_H as f32 * 0.55 - player::PLAYER_HEIGHT * 0.5,
                 ),
+                facing: player::Facing::Down,
             },
             class_name: "Vexillomancer",
             flags,
@@ -192,7 +194,7 @@ fn render_dungeon(game: &mut Game) {
         draw_flag(flag, time, game.wind);
     }
 
-    player::draw_player(game.player.pos, ACCENT);
+    player::draw_player(game.player.pos, ACCENT, game.player.facing);
 
     draw_hud(game.flag_inventory);
 
@@ -208,6 +210,11 @@ fn handle_movement(game: &mut Game) {
         left: is_key_down(KeyCode::A),
         right: is_key_down(KeyCode::D),
     };
+
+    let direction = movement::input_direction(input);
+    if direction.length() > 0.0 {
+        game.player.facing = player::facing_from_direction(direction);
+    }
 
     let delta = movement::movement_delta(input, PLAYER_SPEED, get_frame_time());
     game.player.pos += delta;

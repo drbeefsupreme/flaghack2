@@ -8,7 +8,7 @@ pub struct InputState {
     pub right: bool,
 }
 
-pub fn movement_delta(input: InputState, speed: f32, dt: f32) -> Vec2 {
+pub fn input_direction(input: InputState) -> Vec2 {
     let mut direction = Vec2::ZERO;
 
     if input.up {
@@ -23,6 +23,12 @@ pub fn movement_delta(input: InputState, speed: f32, dt: f32) -> Vec2 {
     if input.right {
         direction.x += 1.0;
     }
+
+    direction
+}
+
+pub fn movement_delta(input: InputState, speed: f32, dt: f32) -> Vec2 {
+    let mut direction = input_direction(input);
 
     if direction.length() > 0.0 {
         direction = direction.normalize();
