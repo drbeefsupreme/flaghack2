@@ -35,6 +35,11 @@ const DOME_COUNT: usize = 2;
 const DOME_PADDING: f32 = 120.0 * scale::MODEL_SCALE;
 pub const DOME_RADIUS: f32 = 100.0 * scale::MODEL_SCALE;
 pub const DOME_HEIGHT: f32 = 100.0 * scale::MODEL_SCALE;
+const T3MPCAMP_TENT_SPACING: f32 = 14.0;
+const T3MPCAMP_ROW1_START: Vec2 = Vec2::new(4926.0, 3300.0);
+const T3MPCAMP_ROW1_END: Vec2 = Vec2::new(5000.0, 3300.0);
+const T3MPCAMP_ROW2_START: Vec2 = Vec2::new(4926.0, 3317.0);
+const T3MPCAMP_ROW2_END: Vec2 = Vec2::new(5000.0, 3317.0);
 
 const TENT_COLORS: [Color; 5] = [
     Color::new(0.88, 0.48, 0.22, 1.0),
@@ -66,6 +71,9 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
             decorations: Vec::new(),
         });
     }
+
+    // t3mpcamp: special camp area within the hand-authored region polygon.
+    add_t3mpcamp_tents(&mut items);
 
     let chairs = [
         vec2(150.0, 200.0),
@@ -197,6 +205,43 @@ fn random_position(field: Rect, padding: f32) -> Vec2 {
     }
 
     vec2(gen_range(min_x, max_x), gen_range(min_y, max_y))
+}
+
+fn add_t3mpcamp_tents(items: &mut Vec<SceneryItem>) {
+    let rows = [
+        (T3MPCAMP_ROW1_START, T3MPCAMP_ROW1_END),
+        (T3MPCAMP_ROW2_START, T3MPCAMP_ROW2_END),
+    ];
+
+    for (row_index, (start, end)) in rows.iter().enumerate() {
+        let positions = line_points(*start, *end, T3MPCAMP_TENT_SPACING);
+        for (i, pos) in positions.into_iter().enumerate() {
+            items.push(SceneryItem {
+                kind: SceneryKind::Tent,
+                pos,
+                scale: 1.0,
+                rotation: 0.0,
+                variant: ((row_index + i) % TENT_COLORS.len()) as u8,
+                decorations: Vec::new(),
+            });
+        }
+    }
+}
+
+fn line_points(start: Vec2, end: Vec2, spacing: f32) -> Vec<Vec2> {
+    let length = (end - start).length();
+    if length < f32::EPSILON || spacing <= f32::EPSILON {
+        return vec![start];
+    }
+
+    let segments = ((length / spacing).round() as usize).max(1);
+    let count = segments + 1;
+    let mut points = Vec::with_capacity(count);
+    for i in 0..count {
+        let t = i as f32 / (count - 1) as f32;
+        points.push(start + (end - start) * t);
+    }
+    points
 }
 
 fn draw_tent(pos: Vec2, variant: u8) {

@@ -16,15 +16,17 @@ pub struct TileMap {
 
 #[derive(Debug)]
 pub struct MapRegion {
+    pub name: &'static str,
     vertices: Vec<Vec2>,
     triangles: Vec<[Vec2; 3]>,
     color: Color,
 }
 
 impl MapRegion {
-    pub fn new(vertices: Vec<Vec2>, color: Color) -> Self {
+    pub fn new(name: &'static str, vertices: Vec<Vec2>, color: Color) -> Self {
         let triangles = triangulate_polygon(&vertices);
         Self {
+            name,
             vertices,
             triangles,
             color,
