@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use crate::scale;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Facing {
@@ -19,14 +20,14 @@ struct PlayerParts {
     hand_right: Hand,
 }
 
-const BODY_W: f32 = 18.0;
-const BODY_H: f32 = 24.0;
+const BODY_W: f32 = 18.0 * scale::MODEL_SCALE;
+const BODY_H: f32 = 24.0 * scale::MODEL_SCALE;
 const BODY_TOP_SCALE: f32 = 0.68;
-const HEAD_RADIUS: f32 = 5.0;
-const HAT_W: f32 = 14.0;
-const HAT_H: f32 = 10.0;
-const HAT_BAND_H: f32 = 2.0;
-const HAND_RADIUS: f32 = 3.0;
+const HEAD_RADIUS: f32 = 5.0 * scale::MODEL_SCALE;
+const HAT_W: f32 = 14.0 * scale::MODEL_SCALE;
+const HAT_H: f32 = 10.0 * scale::MODEL_SCALE;
+const HAT_BAND_H: f32 = 2.0 * scale::MODEL_SCALE;
+const HAND_RADIUS: f32 = 3.0 * scale::MODEL_SCALE;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HandSide {
@@ -65,7 +66,13 @@ pub fn draw_player(top_left: Vec2, accent: Color, facing: Facing) {
 
     let head_color = head_color(facing);
     draw_circle(parts.head_center.x, parts.head_center.y, parts.head_radius, head_color);
-    draw_circle_lines(parts.head_center.x, parts.head_center.y, parts.head_radius, 1.2, outline);
+    draw_circle_lines(
+        parts.head_center.x,
+        parts.head_center.y,
+        parts.head_radius,
+        1.2 * scale::MODEL_SCALE,
+        outline,
+    );
 
     draw_hand(parts.hand_left, accent, outline);
     draw_hand(parts.hand_right, accent, outline);
@@ -75,7 +82,10 @@ fn compute_player_parts(top_left: Vec2, facing: Facing) -> PlayerParts {
     let body_x = top_left.x + (PLAYER_WIDTH - BODY_W) * 0.5;
     let body_y = top_left.y + PLAYER_HEIGHT - BODY_H;
 
-    let head_center = vec2(top_left.x + PLAYER_WIDTH * 0.5, top_left.y + HEAD_RADIUS + 3.0);
+    let head_center = vec2(
+        top_left.x + PLAYER_WIDTH * 0.5,
+        top_left.y + HEAD_RADIUS + 3.0 * scale::MODEL_SCALE,
+    );
 
     let hat_base_y = head_center.y - HEAD_RADIUS * 0.6;
     let hat_top = vec2(head_center.x, hat_base_y - HAT_H);
@@ -90,8 +100,8 @@ fn compute_player_parts(top_left: Vec2, facing: Facing) -> PlayerParts {
     );
 
     let hand_y = body_y + BODY_H * 0.45;
-    let left_pos = vec2(body_x - HAND_RADIUS - 1.0, hand_y);
-    let right_pos = vec2(body_x + BODY_W + HAND_RADIUS + 1.0, hand_y);
+    let left_pos = vec2(body_x - HAND_RADIUS - 1.0 * scale::MODEL_SCALE, hand_y);
+    let right_pos = vec2(body_x + BODY_W + HAND_RADIUS + 1.0 * scale::MODEL_SCALE, hand_y);
     let center_pos = vec2(body_x + BODY_W * 0.5, hand_y);
 
     let (left_visible, right_visible) = match facing {
@@ -127,7 +137,13 @@ fn draw_hand(hand: Hand, color: Color, outline: Color) {
 
     let _ = hand.side;
     draw_circle(hand.pos.x, hand.pos.y, HAND_RADIUS, color);
-    draw_circle_lines(hand.pos.x, hand.pos.y, HAND_RADIUS, 1.0, outline);
+    draw_circle_lines(
+        hand.pos.x,
+        hand.pos.y,
+        HAND_RADIUS,
+        1.0 * scale::MODEL_SCALE,
+        outline,
+    );
 }
 
 fn body_trapezoid(body: Rect) -> [Vec2; 4] {
@@ -188,8 +204,8 @@ fn head_color(facing: Facing) -> Color {
     }
 }
 
-pub const PLAYER_WIDTH: f32 = 30.0;
-pub const PLAYER_HEIGHT: f32 = 40.0;
+pub const PLAYER_WIDTH: f32 = 30.0 * scale::MODEL_SCALE;
+pub const PLAYER_HEIGHT: f32 = 40.0 * scale::MODEL_SCALE;
 
 #[cfg(test)]
 mod tests {

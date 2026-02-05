@@ -1,4 +1,5 @@
 use macroquad::prelude::{Rect, Vec2};
+use crate::scale;
 use macroquad::rand::gen_range;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -28,7 +29,7 @@ impl Wind {
     }
 }
 
-const WIGGLE_AMPLITUDE: f32 = 3.0;
+const WIGGLE_AMPLITUDE: f32 = 3.0 * scale::MODEL_SCALE;
 const WIGGLE_FREQUENCY: f32 = 2.6;
 
 pub fn spawn_initial_flags(count: usize, field: Rect, padding: f32) -> Vec<Flag> {

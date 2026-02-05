@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
+use crate::scale;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SceneryKind {
@@ -28,9 +29,9 @@ pub struct SceneryItem {
 const BASE_W: f32 = 800.0;
 const BASE_H: f32 = 600.0;
 const DOME_COUNT: usize = 2;
-const DOME_PADDING: f32 = 120.0;
-pub const DOME_RADIUS: f32 = 100.0;
-pub const DOME_HEIGHT: f32 = 100.0;
+const DOME_PADDING: f32 = 120.0 * scale::MODEL_SCALE;
+pub const DOME_RADIUS: f32 = 100.0 * scale::MODEL_SCALE;
+pub const DOME_HEIGHT: f32 = 100.0 * scale::MODEL_SCALE;
 
 const TENT_COLORS: [Color; 5] = [
     Color::new(0.88, 0.48, 0.22, 1.0),
@@ -177,7 +178,7 @@ fn random_position(field: Rect, padding: f32) -> Vec2 {
 
 fn draw_tent(pos: Vec2, variant: u8) {
     let color = TENT_COLORS[variant as usize % TENT_COLORS.len()];
-    let size = 28.0;
+    let size = 28.0 * scale::MODEL_SCALE;
 
     draw_triangle(
         vec2(pos.x, pos.y - size * 0.9),
@@ -197,7 +198,7 @@ fn draw_tent(pos: Vec2, variant: u8) {
         vec2(pos.x, pos.y - size * 0.9),
         vec2(pos.x - size, pos.y),
         vec2(pos.x + size, pos.y),
-        1.5,
+        1.5 * scale::MODEL_SCALE,
         Color::new(0.0, 0.0, 0.0, 0.35),
     );
 }
@@ -206,49 +207,64 @@ fn draw_chair(pos: Vec2, rotation: f32) {
     let seat_color = Color::new(0.29, 0.33, 0.39, 1.0);
     let back_color = Color::new(0.18, 0.22, 0.28, 1.0);
     let leg_color = Color::new(0.12, 0.16, 0.20, 1.0);
-
-    let seat = vec2(20.0, 12.0);
-    let back = vec2(20.0, 10.0);
+    let s = scale::MODEL_SCALE;
+    let seat = vec2(20.0 * s, 12.0 * s);
+    let back = vec2(20.0 * s, 10.0 * s);
 
     draw_rotated_rect(pos, seat, rotation, seat_color);
     draw_rotated_rect(pos - vec2(0.0, seat.y * 0.7), back, rotation, back_color);
 
-    let leg_offset = vec2(6.0, 6.0);
-    let leg_len = 8.0;
+    let leg_offset = vec2(6.0 * s, 6.0 * s);
+    let leg_len = 8.0 * s;
     let left = rotate_point(pos + vec2(-leg_offset.x, leg_offset.y), pos, rotation);
     let right = rotate_point(pos + vec2(leg_offset.x, leg_offset.y), pos, rotation);
 
-    draw_line(left.x, left.y, left.x - 2.0, left.y + leg_len, 2.0, leg_color);
-    draw_line(right.x, right.y, right.x + 2.0, right.y + leg_len, 2.0, leg_color);
+    draw_line(
+        left.x,
+        left.y,
+        left.x - 2.0 * s,
+        left.y + leg_len,
+        2.0 * s,
+        leg_color,
+    );
+    draw_line(
+        right.x,
+        right.y,
+        right.x + 2.0 * s,
+        right.y + leg_len,
+        2.0 * s,
+        leg_color,
+    );
 }
 
 fn draw_campfire(pos: Vec2, time: f32) {
     let stone_color = Color::new(0.33, 0.33, 0.33, 1.0);
     let log_color = Color::new(0.36, 0.25, 0.20, 1.0);
+    let s = scale::MODEL_SCALE;
 
     let stone_angles: [f32; 8] = [0.0, 0.8, 1.6, 2.4, 3.2, 4.0, 4.8, 5.6];
     for angle in stone_angles {
-        let sx = pos.x + angle.cos() * 16.0;
-        let sy = pos.y + angle.sin() * 8.0;
-        draw_ellipse(sx, sy, 6.0, 4.0, 0.0, stone_color);
+        let sx = pos.x + angle.cos() * 16.0 * s;
+        let sy = pos.y + angle.sin() * 8.0 * s;
+        draw_ellipse(sx, sy, 6.0 * s, 4.0 * s, 0.0, stone_color);
     }
 
-    draw_rectangle(pos.x - 12.0, pos.y - 3.0, 24.0, 6.0, log_color);
-    draw_rectangle(pos.x - 8.0, pos.y - 6.0, 16.0, 5.0, log_color);
+    draw_rectangle(pos.x - 12.0 * s, pos.y - 3.0 * s, 24.0 * s, 6.0 * s, log_color);
+    draw_rectangle(pos.x - 8.0 * s, pos.y - 6.0 * s, 16.0 * s, 5.0 * s, log_color);
 
-    let flicker = (time * 3.0).sin() * 3.0;
+    let flicker = (time * 3.0).sin() * 3.0 * s;
 
     draw_triangle(
-        vec2(pos.x, pos.y - 26.0 - flicker),
-        vec2(pos.x - 9.0, pos.y - 6.0),
-        vec2(pos.x + 9.0, pos.y - 6.0),
+        vec2(pos.x, pos.y - 26.0 * s - flicker),
+        vec2(pos.x - 9.0 * s, pos.y - 6.0 * s),
+        vec2(pos.x + 9.0 * s, pos.y - 6.0 * s),
         Color::new(1.0, 0.42, 0.21, 1.0),
     );
 
     draw_triangle(
-        vec2(pos.x, pos.y - 18.0 - flicker * 0.5),
-        vec2(pos.x - 5.0, pos.y - 6.0),
-        vec2(pos.x + 5.0, pos.y - 6.0),
+        vec2(pos.x, pos.y - 18.0 * s - flicker * 0.5),
+        vec2(pos.x - 5.0 * s, pos.y - 6.0 * s),
+        vec2(pos.x + 5.0 * s, pos.y - 6.0 * s),
         Color::new(1.0, 0.85, 0.24, 1.0),
     );
 }
@@ -257,26 +273,27 @@ fn draw_tree(pos: Vec2, scale: f32) {
     let trunk_color = Color::new(0.36, 0.25, 0.20, 1.0);
     let foliage_dark = Color::new(0.13, 0.55, 0.13, 1.0);
     let foliage_light = Color::new(0.18, 0.63, 0.18, 1.0);
+    let s = scale::MODEL_SCALE * scale;
 
     draw_rectangle(
-        pos.x - 4.0 * scale,
-        pos.y - 16.0 * scale,
-        8.0 * scale,
-        22.0 * scale,
+        pos.x - 4.0 * s,
+        pos.y - 16.0 * s,
+        8.0 * s,
+        22.0 * s,
         trunk_color,
     );
 
     draw_triangle(
-        vec2(pos.x, pos.y - 42.0 * scale),
-        vec2(pos.x - 20.0 * scale, pos.y - 16.0 * scale),
-        vec2(pos.x + 20.0 * scale, pos.y - 16.0 * scale),
+        vec2(pos.x, pos.y - 42.0 * s),
+        vec2(pos.x - 20.0 * s, pos.y - 16.0 * s),
+        vec2(pos.x + 20.0 * s, pos.y - 16.0 * s),
         foliage_dark,
     );
 
     draw_triangle(
-        vec2(pos.x, pos.y - 32.0 * scale),
-        vec2(pos.x - 16.0 * scale, pos.y - 12.0 * scale),
-        vec2(pos.x + 16.0 * scale, pos.y - 12.0 * scale),
+        vec2(pos.x, pos.y - 32.0 * s),
+        vec2(pos.x - 16.0 * s, pos.y - 12.0 * s),
+        vec2(pos.x + 16.0 * s, pos.y - 12.0 * s),
         foliage_light,
     );
 }
@@ -285,6 +302,8 @@ fn draw_geodesic_dome(center: Vec2, time: f32, decorations: &[DomeDecoration]) {
     let radius = DOME_RADIUS;
     let height = DOME_HEIGHT;
     let squash = 0.4;
+    let line_w = 1.0 * scale::MODEL_SCALE;
+    let rim = 5.0 * scale::MODEL_SCALE;
 
     #[derive(Clone, Copy)]
     struct DomeVertex {
@@ -320,7 +339,14 @@ fn draw_geodesic_dome(center: Vec2, time: f32, decorations: &[DomeDecoration]) {
     let mut edge = |v1: DomeVertex, v2: DomeVertex| {
         let d = (v1.depth + v2.depth) * 0.5;
         let alpha = 0.2 + d.max(0.0) * 0.4;
-        draw_line(v1.pos.x, v1.pos.y, v2.pos.x, v2.pos.y, 1.0, edge_color(alpha));
+        draw_line(
+            v1.pos.x,
+            v1.pos.y,
+            v2.pos.x,
+            v2.pos.y,
+            line_w,
+            edge_color(alpha),
+        );
     };
 
     let ring = |verts: &[DomeVertex], edge_fn: &mut dyn FnMut(DomeVertex, DomeVertex)| {
@@ -351,11 +377,11 @@ fn draw_geodesic_dome(center: Vec2, time: f32, decorations: &[DomeDecoration]) {
 
     draw_ellipse_lines(
         center.x,
-        center.y + 2.0,
-        radius + 5.0,
-        (radius + 5.0) * squash,
+        center.y + 2.0 * scale::MODEL_SCALE,
+        radius + rim,
+        (radius + rim) * squash,
         0.0,
-        1.0,
+        line_w,
         Color::new(160.0 / 255.0, 210.0 / 255.0, 250.0 / 255.0, 0.3),
     );
 
@@ -367,10 +393,11 @@ fn draw_geodesic_dome(center: Vec2, time: f32, decorations: &[DomeDecoration]) {
 fn draw_big_red_crystal(center: Vec2, time: f32) {
     let pulse = ((time * 1.1).sin() + 1.0) * 0.5;
     let glow_alpha = 0.18 + pulse * 0.12;
+    let s = scale::MODEL_SCALE;
 
-    let tip_h = 22.0;
-    let body_h = 56.0;
-    let half_w = 14.0;
+    let tip_h = 22.0 * s;
+    let body_h = 56.0 * s;
+    let half_w = 14.0 * s;
     let top_tip = center.y - (body_h * 0.5 + tip_h);
     let body_top = center.y - body_h * 0.5;
     let body_bottom = center.y + body_h * 0.5;
@@ -378,14 +405,14 @@ fn draw_big_red_crystal(center: Vec2, time: f32) {
 
     draw_circle(
         center.x,
-        center.y + 4.0,
-        42.0,
+        center.y + 4.0 * s,
+        42.0 * s,
         Color::new(1.0, 0.05, 0.05, glow_alpha),
     );
     draw_circle(
         center.x,
-        center.y + 4.0,
-        26.0,
+        center.y + 4.0 * s,
+        26.0 * s,
         Color::new(0.7, 0.0, 0.0, glow_alpha * 0.8),
     );
 
@@ -466,9 +493,9 @@ fn draw_big_red_crystal(center: Vec2, time: f32) {
 
     let highlight = 0.25 + pulse * 0.2;
     draw_triangle(
-        vec2(center.x - half_w * 0.15, body_top + 6.0),
+        vec2(center.x - half_w * 0.15, body_top + 6.0 * s),
         vec2(center.x + half_w * 0.55, body_top + body_h * 0.45),
-        vec2(center.x - half_w * 0.05, body_bottom - 6.0),
+        vec2(center.x - half_w * 0.05, body_bottom - 6.0 * s),
         Color::new(1.0, 0.65, 0.65, highlight),
     );
 }
@@ -476,11 +503,19 @@ fn draw_big_red_crystal(center: Vec2, time: f32) {
 fn draw_crystal_strings(top1: Vec2, top2: Vec2, bottom1: Vec2, bottom2: Vec2, pulse: f32) {
     let count = 18;
     let glow = Color::new(0.95, 0.9, 0.6, 0.25 + pulse * 0.2);
+    let s = scale::MODEL_SCALE;
     for i in 0..count {
         let t = i as f32 / (count - 1) as f32;
         let top = lerp_point(top1, top2, t);
         let bottom = lerp_point(bottom1, bottom2, 1.0 - t);
-        draw_line(top.x, top.y + 2.0, bottom.x, bottom.y - 2.0, 1.0, glow);
+        draw_line(
+            top.x,
+            top.y + 2.0 * s,
+            bottom.x,
+            bottom.y - 2.0 * s,
+            1.0 * s,
+            glow,
+        );
     }
 }
 

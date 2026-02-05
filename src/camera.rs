@@ -7,10 +7,12 @@ pub struct CameraState {
     drag_last: Option<Vec2>,
 }
 
+pub const DEFAULT_ZOOM: f32 = 4.0;
+
 impl CameraState {
     pub fn new() -> Self {
         Self {
-            zoom: 1.0,
+            zoom: DEFAULT_ZOOM,
             pan: Vec2::ZERO,
             drag_last: None,
         }
@@ -94,5 +96,11 @@ mod tests {
         let zoom = vec2(2.0, -3.0);
         let flipped = flip_zoom_y(zoom);
         assert_eq!(flipped, vec2(2.0, 3.0));
+    }
+
+    #[test]
+    fn camera_state_defaults_to_zoom() {
+        let state = CameraState::new();
+        assert!((state.zoom - DEFAULT_ZOOM).abs() < f32::EPSILON);
     }
 }

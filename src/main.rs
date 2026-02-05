@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 
 mod assets;
 mod camera;
+mod scale;
 mod movement;
 mod flags;
 mod scenery;
@@ -13,16 +14,18 @@ const SCREEN_W: i32 = 960;
 const SCREEN_H: i32 = 540;
 const ACCENT: Color = Color::new(1.0, 0.9, 0.0, 1.0);
 const HUD_HEIGHT: f32 = 48.0;
-const FLAG_INTERACT_RADIUS: f32 = 48.0;
-const FLAG_POLE_HEIGHT: f32 = 36.0;
-const FLAG_POLE_WIDTH: f32 = 3.0;
-const FLAG_CLOTH_SIZE: Vec2 = Vec2::new(22.0, 14.0);
-const FLAG_PLACE_OFFSET: Vec2 = Vec2::new(28.0, 0.0);
+const FLAG_INTERACT_RADIUS: f32 = 48.0 * scale::MODEL_SCALE;
+const FLAG_POLE_HEIGHT: f32 = 36.0 * scale::MODEL_SCALE;
+const FLAG_POLE_WIDTH: f32 = 3.0 * scale::MODEL_SCALE;
+const FLAG_CLOTH_SIZE: Vec2 =
+    Vec2::new(22.0 * scale::MODEL_SCALE, 14.0 * scale::MODEL_SCALE);
+const FLAG_PLACE_OFFSET: Vec2 =
+    Vec2::new(28.0 * scale::MODEL_SCALE, 0.0);
 const FLAG_COUNT_START: usize = 10;
 const LEY_MAX_DISTANCE: f32 = 220.0;
 const LEY_BASE_COLOR: Color = Color::new(0.55, 0.42, 0.9, 1.0);
-const CAMERA_ZOOM_MIN: f32 = 0.6;
-const CAMERA_ZOOM_MAX: f32 = 2.0;
+const CAMERA_ZOOM_MIN: f32 = camera::DEFAULT_ZOOM * 0.25;
+const CAMERA_ZOOM_MAX: f32 = camera::DEFAULT_ZOOM * 2.0;
 const CAMERA_ZOOM_STEP: f32 = 0.1;
 const MAP_TILE_DIR: &str = "assets/map/tiles";
 const MAP_TRAVEL_MINUTES: f32 = 10.0;
@@ -64,7 +67,11 @@ impl Game {
     fn new() -> Self {
         let map = map::TileMap::load_from_dir(MAP_TILE_DIR);
         let field_rect = map.field_rect();
-        let flags = flags::spawn_random_flags(FLAG_COUNT_START, field_rect, 40.0);
+        let flags = flags::spawn_random_flags(
+            FLAG_COUNT_START,
+            field_rect,
+            40.0 * scale::MODEL_SCALE,
+        );
         let ley_lines = ley_lines::compute_ley_lines(&flags, LEY_MAX_DISTANCE);
         let player_speed = map::adjusted_travel_speed(
             map.width,
@@ -221,7 +228,7 @@ fn render_dungeon(game: &mut Game) {
     draw_centered("WASD to move", 110.0, 20.0, ACCENT);
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
     draw_centered("Q to quit", 160.0, 20.0, ACCENT);
-    draw_hud(game.flag_inventory, game.player_speed);
+    draw_hud(game.flag_inventory, game.player_speed, game.player.pos);
 
     if is_key_pressed(KeyCode::Escape) {
         game.scene = Scene::ClassSelect;
@@ -291,7 +298,7 @@ fn draw_flag(flag: &flags::Flag, time: f32, wind: flags::Wind) {
     draw_rectangle(cloth.x + wiggle.x, cloth.y + wiggle.y, cloth.w, cloth.h, ACCENT);
 }
 
-fn draw_hud(flag_count: u32, speed: f32) {
+fn draw_hud(flag_count: u32, speed: f32, player_pos: Vec2) {
     let y = screen_height() - HUD_HEIGHT;
     draw_rectangle(0.0, y, screen_width(), HUD_HEIGHT, BLACK);
 
@@ -300,6 +307,11 @@ fn draw_hud(flag_count: u32, speed: f32) {
 
     let speed_text = format!("Speed: {:.1}px/s", speed);
     draw_text(&speed_text, 180.0, y + 32.0, 20.0, ACCENT);
+
+    let coords = format_player_coords(player_pos);
+    let metrics = measure_text(&coords, None, 20, 1.0);
+    let x = screen_width() - metrics.width - 16.0;
+    draw_text(&coords, x, y + 32.0, 20.0, ACCENT);
 }
 
 fn draw_ley_lines(lines: &[ley_lines::LeyLine]) {
@@ -310,7 +322,7 @@ fn draw_ley_lines(lines: &[ley_lines::LeyLine]) {
             b: LEY_BASE_COLOR.b,
             a: line.intensity.clamp(0.1, 1.0),
         };
-        let width = 2.0 + 4.0 * line.intensity;
+        let width = scale::scaled(2.0 + 4.0 * line.intensity);
         draw_line(line.a.x, line.a.y, line.b.x, line.b.y, width, color);
     }
 }
@@ -362,4 +374,19 @@ fn draw_centered(text: &str, y: f32, size: f32, color: Color) {
     let metrics = measure_text(text, None, size as u16, 1.0);
     let x = (screen_width() - metrics.width) * 0.5;
     draw_text(text, x, y, size, color);
+}
+
+fn format_player_coords(pos: Vec2) -> String {
+    format!("X: {:.0}  Y: {:.0}", pos.x, pos.y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_player_coords_rounds_to_whole_numbers() {
+        let text = format_player_coords(vec2(12.4, 13.6));
+        assert_eq!(text, "X: 12  Y: 14");
+    }
 }
