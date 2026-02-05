@@ -2,6 +2,8 @@ use crate::assets;
 use macroquad::prelude::*;
 use std::path::Path;
 
+const POLYGON_EPSILON: f32 = 1.0e-5;
+
 #[derive(Debug)]
 pub struct TileMap {
     pub tile_size: f32,
@@ -10,6 +12,37 @@ pub struct TileMap {
     pub width: f32,
     pub height: f32,
     tiles: Vec<Option<Texture2D>>,
+}
+
+#[derive(Debug)]
+pub struct MapRegion {
+    pub name: &'static str,
+    vertices: Vec<Vec2>,
+    triangles: Vec<[Vec2; 3]>,
+    color: Color,
+}
+
+impl MapRegion {
+    pub fn new(name: &'static str, vertices: Vec<Vec2>, color: Color) -> Self {
+        let triangles = triangulate_polygon(&vertices);
+        Self {
+            name,
+            vertices,
+            triangles,
+            color,
+        }
+    }
+
+    pub fn set_vertices(&mut self, vertices: Vec<Vec2>) {
+        self.vertices = vertices;
+        self.triangles = triangulate_polygon(&self.vertices);
+    }
+
+    pub fn draw(&self) {
+        for tri in &self.triangles {
+            draw_triangle(tri[0], tri[1], tri[2], self.color);
+        }
+    }
 }
 
 impl TileMap {
@@ -142,6 +175,152 @@ pub fn travel_speed(map_width: f32, map_height: f32, minutes: f32) -> f32 {
 
 pub fn adjusted_travel_speed(map_width: f32, map_height: f32, minutes: f32, multiplier: f32) -> f32 {
     travel_speed(map_width, map_height, minutes) * multiplier
+}
+
+pub fn triangulate_polygon(vertices: &[Vec2]) -> Vec<[Vec2; 3]> {
+    let count = vertices.len();
+    if count < 3 {
+        return Vec::new();
+    }
+
+    let area = polygon_area(vertices);
+    if area.abs() < POLYGON_EPSILON {
+        return Vec::new();
+    }
+    let orientation = if area > 0.0 { 1.0 } else { -1.0 };
+
+    let mut indices: Vec<usize> = (0..count).collect();
+    let mut triangles: Vec<[Vec2; 3]> = Vec::with_capacity(count.saturating_sub(2));
+    let mut failed = false;
+    let mut guard = 0;
+
+    while indices.len() > 3 && guard < count * count {
+        let mut ear_found = false;
+        let len = indices.len();
+
+        for i in 0..len {
+            let prev = indices[(i + len - 1) % len];
+            let curr = indices[i];
+            let next = indices[(i + 1) % len];
+
+            if !is_convex(vertices[prev], vertices[curr], vertices[next], orientation) {
+                continue;
+            }
+
+            if triangle_area(vertices[prev], vertices[curr], vertices[next]).abs() < POLYGON_EPSILON {
+                continue;
+            }
+
+            let mut contains = false;
+            for &idx in &indices {
+                if idx == prev || idx == curr || idx == next {
+                    continue;
+                }
+
+                if point_in_triangle(vertices[idx], vertices[prev], vertices[curr], vertices[next]) {
+                    contains = true;
+                    break;
+                }
+            }
+
+            if contains {
+                continue;
+            }
+
+            triangles.push([vertices[prev], vertices[curr], vertices[next]]);
+            indices.remove(i);
+            ear_found = true;
+            break;
+        }
+
+        if !ear_found {
+            failed = true;
+            break;
+        }
+
+        guard += 1;
+    }
+
+    if !failed && indices.len() == 3 {
+        triangles.push([
+            vertices[indices[0]],
+            vertices[indices[1]],
+            vertices[indices[2]],
+        ]);
+    }
+
+    if failed || triangles.len() != count.saturating_sub(2) {
+        if is_polygon_convex(vertices) {
+            triangles.clear();
+            for i in 1..count.saturating_sub(1) {
+                triangles.push([vertices[0], vertices[i], vertices[i + 1]]);
+            }
+        }
+    }
+
+    triangles
+}
+
+fn is_polygon_convex(vertices: &[Vec2]) -> bool {
+    let count = vertices.len();
+    if count < 4 {
+        return true;
+    }
+
+    let area = polygon_area(vertices);
+    if area.abs() < POLYGON_EPSILON {
+        return false;
+    }
+    let orientation = if area > 0.0 { 1.0 } else { -1.0 };
+
+    for i in 0..count {
+        let prev = vertices[(i + count - 1) % count];
+        let curr = vertices[i];
+        let next = vertices[(i + 1) % count];
+        let cross = cross_2d(next - curr, prev - curr);
+        if cross.abs() < POLYGON_EPSILON {
+            continue;
+        }
+        if cross * orientation < 0.0 {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn is_convex(prev: Vec2, curr: Vec2, next: Vec2, orientation: f32) -> bool {
+    let cross = cross_2d(next - curr, prev - curr);
+    cross * orientation > POLYGON_EPSILON
+}
+
+fn point_in_triangle(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> bool {
+    let ab = cross_2d(b - a, p - a);
+    let bc = cross_2d(c - b, p - b);
+    let ca = cross_2d(a - c, p - c);
+
+    let has_neg = ab < -POLYGON_EPSILON || bc < -POLYGON_EPSILON || ca < -POLYGON_EPSILON;
+    let has_pos = ab > POLYGON_EPSILON || bc > POLYGON_EPSILON || ca > POLYGON_EPSILON;
+
+    !(has_neg && has_pos)
+}
+
+fn triangle_area(a: Vec2, b: Vec2, c: Vec2) -> f32 {
+    cross_2d(b - a, c - a) * 0.5
+}
+
+fn polygon_area(vertices: &[Vec2]) -> f32 {
+    let count = vertices.len();
+    let mut area = 0.0;
+    for i in 0..count {
+        let j = (i + 1) % count;
+        area += vertices[i].x * vertices[j].y - vertices[j].x * vertices[i].y;
+    }
+    area * 0.5
+}
+
+fn cross_2d(a: Vec2, b: Vec2) -> f32 {
+    a.x * b.y - a.y * b.x
 }
 
 #[cfg(test)]

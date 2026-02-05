@@ -30,6 +30,16 @@ const CAMERA_ZOOM_STEP: f32 = 0.1;
 const MAP_TILE_DIR: &str = "assets/map/tiles";
 const MAP_TRAVEL_MINUTES: f32 = 10.0;
 const SPEED_MULTIPLIER: f32 = 4.0;
+const MAP_REGION_COLOR: Color = Color::new(0.1, 0.6, 0.2, 1.0);
+const PLAYER_SPAWN_POS: Vec2 = Vec2::new(5015.0, 3292.0);
+const T3MPCAMP_NAME: &str = "t3mpcamp";
+const T3MPCAMP_VERTICES: [Vec2; 5] = [
+    Vec2::new(4858.0, 3168.0),
+    Vec2::new(5042.0, 3107.0),
+    Vec2::new(5123.0, 3345.0),
+    Vec2::new(5054.0, 3367.0),
+    Vec2::new(4911.0, 3322.0),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scene {
@@ -54,6 +64,7 @@ struct Game {
     scenery: Vec<scenery::SceneryItem>,
     ley_lines: Vec<ley_lines::LeyLine>,
     map: map::TileMap,
+    map_regions: Vec<map::MapRegion>,
     camera: camera::CameraState,
     player_speed: f32,
 }
@@ -67,6 +78,12 @@ impl Game {
     fn new() -> Self {
         let map = map::TileMap::load_from_dir(MAP_TILE_DIR);
         let field_rect = map.field_rect();
+        // t3mpcamp: special camp area region (hand-authored polygon).
+        let map_regions = vec![map::MapRegion::new(
+            T3MPCAMP_NAME,
+            T3MPCAMP_VERTICES.to_vec(),
+            MAP_REGION_COLOR,
+        )];
         let flags = flags::spawn_random_flags(
             FLAG_COUNT_START,
             field_rect,
@@ -82,10 +99,7 @@ impl Game {
         Self {
             scene: Scene::Title,
             player: Player {
-                pos: vec2(
-                    map.width * 0.5 - player::PLAYER_WIDTH * 0.5,
-                    map.height * 0.5 - player::PLAYER_HEIGHT * 0.5,
-                ),
+                pos: PLAYER_SPAWN_POS,
                 facing: player::Facing::Down,
             },
             class_name: "Vexillomancer",
@@ -95,6 +109,7 @@ impl Game {
             scenery: scenery::spawn_scenery(field_rect),
             ley_lines,
             map,
+            map_regions,
             camera: camera::CameraState::new(),
             player_speed,
         }
@@ -215,6 +230,9 @@ fn render_dungeon(game: &mut Game) {
     set_camera(&camera);
 
     game.map.draw(view_rect);
+    for region in &game.map_regions {
+        region.draw();
+    }
     scenery::draw_scenery(&game.scenery, time);
     draw_ley_lines(&game.ley_lines);
     for flag in &game.flags {
