@@ -1,4 +1,5 @@
 use macroquad::prelude::{Rect, Vec2};
+use macroquad::rand::gen_range;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Flag {
@@ -56,6 +57,30 @@ pub fn spawn_initial_flags(count: usize, field: Rect, padding: f32) -> Vec<Flag>
         let x = field.x + padding + cell_w * (col as f32 + 0.5);
         let y = field.y + padding + cell_h * (row as f32 + 0.5);
 
+        let pos = Vec2::new(x, y);
+        flags.push(Flag {
+            pos,
+            phase: phase_from_position(pos),
+        });
+    }
+
+    flags
+}
+
+pub fn spawn_random_flags(count: usize, field: Rect, padding: f32) -> Vec<Flag> {
+    if count == 0 {
+        return Vec::new();
+    }
+
+    let min_x = field.x + padding;
+    let max_x = field.x + field.w - padding;
+    let min_y = field.y + padding;
+    let max_y = field.y + field.h - padding;
+
+    let mut flags = Vec::with_capacity(count);
+    for _ in 0..count {
+        let x = gen_range(min_x, max_x);
+        let y = gen_range(min_y, max_y);
         let pos = Vec2::new(x, y);
         flags.push(Flag {
             pos,

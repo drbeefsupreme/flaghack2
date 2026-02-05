@@ -5,12 +5,12 @@ mod movement;
 mod flags;
 mod scenery;
 mod ley_lines;
+mod player;
 
 const SCREEN_W: i32 = 960;
 const SCREEN_H: i32 = 540;
 const ACCENT: Color = Color::new(1.0, 0.9, 0.0, 1.0);
 const FIELD_GREEN: Color = Color::new(0.06, 0.35, 0.12, 1.0);
-const PLAYER_SIZE: f32 = 26.0;
 const PLAYER_SPEED: f32 = 220.0;
 const HUD_HEIGHT: f32 = 48.0;
 const FLAG_INTERACT_RADIUS: f32 = 48.0;
@@ -53,20 +53,22 @@ struct Assets {
 impl Game {
     fn new() -> Self {
         let field_rect = flags::field_rect(SCREEN_W as f32, SCREEN_H as f32, HUD_HEIGHT);
+        let flags = flags::spawn_random_flags(FLAG_COUNT_START, field_rect, 40.0);
+        let ley_lines = ley_lines::compute_ley_lines(&flags, LEY_MAX_DISTANCE);
         Self {
             scene: Scene::Title,
             player: Player {
                 pos: vec2(
-                    SCREEN_W as f32 * 0.5 - PLAYER_SIZE * 0.5,
-                    SCREEN_H as f32 * 0.55 - PLAYER_SIZE * 0.5,
+                    SCREEN_W as f32 * 0.5 - player::PLAYER_WIDTH * 0.5,
+                    SCREEN_H as f32 * 0.55 - player::PLAYER_HEIGHT * 0.5,
                 ),
             },
             class_name: "Vexillomancer",
-            flags: flags::spawn_initial_flags(FLAG_COUNT_START, field_rect, 40.0),
+            flags,
             flag_inventory: 0,
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
             scenery: scenery::spawn_scenery(field_rect),
-            ley_lines: Vec::new(),
+            ley_lines,
         }
     }
 }
@@ -190,13 +192,7 @@ fn render_dungeon(game: &mut Game) {
         draw_flag(flag, time, game.wind);
     }
 
-    draw_rectangle(
-        game.player.pos.x,
-        game.player.pos.y,
-        PLAYER_SIZE,
-        PLAYER_SIZE,
-        BLACK,
-    );
+    player::draw_player(game.player.pos, ACCENT);
 
     draw_hud(game.flag_inventory);
 
@@ -216,8 +212,8 @@ fn handle_movement(game: &mut Game) {
     let delta = movement::movement_delta(input, PLAYER_SPEED, get_frame_time());
     game.player.pos += delta;
 
-    let max_x = (screen_width() - PLAYER_SIZE).max(0.0);
-    let max_y = (screen_height() - HUD_HEIGHT - PLAYER_SIZE).max(0.0);
+    let max_x = (screen_width() - player::PLAYER_WIDTH).max(0.0);
+    let max_y = (screen_height() - HUD_HEIGHT - player::PLAYER_HEIGHT).max(0.0);
     game.player.pos.x = game.player.pos.x.clamp(0.0, max_x);
     game.player.pos.y = game.player.pos.y.clamp(0.0, max_y);
 }
