@@ -2,13 +2,7 @@ use macroquad::prelude::*;
 
 use crate::constants;
 
-pub fn draw_hud(
-    flag_count: u32,
-    speed: f32,
-    player_pos: Vec2,
-    total_flags: u32,
-    flagic: u8,
-) {
+pub fn draw_hud(flag_count: u32, speed: f32, player_pos: Vec2, total_flags: u32, flagic: u8) {
     let y = screen_height() - constants::HUD_HEIGHT;
     draw_rectangle(0.0, y, screen_width(), constants::HUD_HEIGHT, BLACK);
 

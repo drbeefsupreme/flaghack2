@@ -35,12 +35,7 @@ impl FlagState {
         debug_assert_eq!(self.total, self.current_total(hippie_flags));
     }
 
-    pub fn try_place_from_player(
-        &mut self,
-        origin: Vec2,
-        offset: Vec2,
-        field: Rect,
-    ) -> bool {
+    pub fn try_place_from_player(&mut self, origin: Vec2, offset: Vec2, field: Rect) -> bool {
         flags::try_place_flag(&mut self.ground, &mut self.player, origin, offset, field)
     }
 

@@ -74,11 +74,8 @@ impl TileMap {
         let mut tile_size = None;
 
         for (x, y, file_path) in entries {
-            let raster = assets::load_png_rgba(
-                file_path
-                    .to_str()
-                    .expect("Invalid tile path string"),
-            );
+            let raster =
+                assets::load_png_rgba(file_path.to_str().expect("Invalid tile path string"));
             tile_size.get_or_insert(raster.width as f32);
             if (raster.width as f32 - tile_size.unwrap()).abs() > f32::EPSILON {
                 panic!("Tile width mismatch for {:?}", file_path);
@@ -171,7 +168,12 @@ pub fn travel_speed(map_width: f32, map_height: f32, minutes: f32) -> f32 {
     max_dim / (minutes * 60.0)
 }
 
-pub fn adjusted_travel_speed(map_width: f32, map_height: f32, minutes: f32, multiplier: f32) -> f32 {
+pub fn adjusted_travel_speed(
+    map_width: f32,
+    map_height: f32,
+    minutes: f32,
+    multiplier: f32,
+) -> f32 {
     travel_speed(map_width, map_height, minutes) * multiplier
 }
 

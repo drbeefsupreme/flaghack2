@@ -2,20 +2,20 @@ use macroquad::prelude::*;
 
 mod assets;
 mod camera;
-mod fire;
-mod scale;
-mod movement;
-mod flags;
-mod scenery;
-mod ley_lines;
-mod player;
-mod map;
-mod constants;
-mod npc;
-mod hud;
-mod geom;
-mod flag_state;
 mod camps;
+mod constants;
+mod fire;
+mod flag_state;
+mod flags;
+mod geom;
+mod hud;
+mod ley_lines;
+mod map;
+mod movement;
+mod npc;
+mod player;
+mod scale;
+mod scenery;
 
 use constants::*;
 
@@ -103,30 +103,20 @@ impl Game {
             }
         }
         let camp_spawns = camps::collect_scenery_spawns(&camp_configs);
-        let ground_flags = flags::spawn_random_flags(
-            FLAG_COUNT_START,
-            field_rect,
-            40.0 * scale::MODEL_SCALE,
-        );
+        let ground_flags =
+            flags::spawn_random_flags(FLAG_COUNT_START, field_rect, 40.0 * scale::MODEL_SCALE);
         let mut ground_flags = ground_flags;
         for pos in camps::collect_flag_spawns(&camp_configs) {
             ground_flags.push(flags::make_flag(pos));
         }
         let total_flags =
             ground_flags.len() as u32 + STARTING_FLAG_INVENTORY + total_hippie_flags(&hippies);
-        let flag_state = flag_state::FlagState::new(
-            ground_flags,
-            STARTING_FLAG_INVENTORY,
-            total_flags,
-        );
+        let flag_state =
+            flag_state::FlagState::new(ground_flags, STARTING_FLAG_INVENTORY, total_flags);
         let ley_state = ley_lines::compute_ley_state(flag_state.ground_flags(), LEY_MAX_DISTANCE);
         let scenery = scenery::spawn_scenery(field_rect, &camp_spawns);
-        let player_speed = map::adjusted_travel_speed(
-            map.width,
-            map.height,
-            MAP_TRAVEL_MINUTES,
-            SPEED_MULTIPLIER,
-        );
+        let player_speed =
+            map::adjusted_travel_speed(map.width, map.height, MAP_TRAVEL_MINUTES, SPEED_MULTIPLIER);
         Self {
             scene: Scene::Title,
             player: Player {
@@ -265,8 +255,8 @@ fn render_dungeon(game: &mut Game) {
 
     let time = get_time() as f32;
     let dt = get_frame_time();
-    let player_center = game.player.pos
-        + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
+    let player_center =
+        game.player.pos + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
     update_camp_notices(game, player_center, dt);
     let hippies_picked = npc::update_hippies(
         &mut game.hippies,
@@ -374,8 +364,8 @@ fn handle_flag_interactions(game: &mut Game) {
             recompute_ley_state(game);
         }
 
-        let player_center = game.player.pos
-            + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
+        let player_center =
+            game.player.pos + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
         npc::try_steal_flag(
             &mut game.hippies,
             player_center,
@@ -398,7 +388,13 @@ fn draw_flag(flag: &flags::Flag, time: f32, wind: flags::Wind) {
         Color::new(0.55, 0.44, 0.28, 1.0),
     );
 
-    draw_rectangle(cloth.x + wiggle.x, cloth.y + wiggle.y, cloth.w, cloth.h, ACCENT);
+    draw_rectangle(
+        cloth.x + wiggle.x,
+        cloth.y + wiggle.y,
+        cloth.w,
+        cloth.h,
+        ACCENT,
+    );
 }
 
 fn draw_ley_lines(lines: &[ley_lines::LeyLine], time: f32) {
@@ -407,37 +403,49 @@ fn draw_ley_lines(lines: &[ley_lines::LeyLine], time: f32) {
     for line in lines {
         let sparkle_phase = (line.a.x + line.b.y) * LEY_SPARKLE_SPATIAL;
         let sparkle = 0.5 + 0.5 * (time * LEY_SPARKLE_SPEED + sparkle_phase).sin();
-        let (base_a, base_b, cycle_t, sparkle_strength, min_alpha, width_base, width_scale, sat_base, sat_scale, bright_base, bright_scale, highlight) =
-            match line.kind {
-                ley_lines::LeyLineKind::Pentagram => (
-                    PENTAGRAM_COLOR_RED,
-                    PENTAGRAM_COLOR_ORANGE,
-                    pent_cycle,
-                    0.6,
-                    PENTAGRAM_MIN_ALPHA,
-                    1.8,
-                    4.0,
-                    0.9,
-                    0.8,
-                    0.9,
-                    0.7,
-                    Color::new(1.0, 0.9, 0.65, 1.0),
-                ),
-                ley_lines::LeyLineKind::Normal => (
-                    LEY_COLOR_PURPLE,
-                    LEY_COLOR_PINK,
-                    cycle,
-                    LEY_SPARKLE_STRENGTH,
-                    LEY_MIN_ALPHA,
-                    1.0,
-                    3.0,
-                    0.6,
-                    0.6,
-                    0.7,
-                    0.5,
-                    Color::new(1.0, 0.85, 1.0, 1.0),
-                ),
-            };
+        let (
+            base_a,
+            base_b,
+            cycle_t,
+            sparkle_strength,
+            min_alpha,
+            width_base,
+            width_scale,
+            sat_base,
+            sat_scale,
+            bright_base,
+            bright_scale,
+            highlight,
+        ) = match line.kind {
+            ley_lines::LeyLineKind::Pentagram => (
+                PENTAGRAM_COLOR_RED,
+                PENTAGRAM_COLOR_ORANGE,
+                pent_cycle,
+                0.6,
+                PENTAGRAM_MIN_ALPHA,
+                1.8,
+                4.0,
+                0.9,
+                0.8,
+                0.9,
+                0.7,
+                Color::new(1.0, 0.9, 0.65, 1.0),
+            ),
+            ley_lines::LeyLineKind::Normal => (
+                LEY_COLOR_PURPLE,
+                LEY_COLOR_PINK,
+                cycle,
+                LEY_SPARKLE_STRENGTH,
+                LEY_MIN_ALPHA,
+                1.0,
+                3.0,
+                0.6,
+                0.6,
+                0.7,
+                0.5,
+                Color::new(1.0, 0.85, 1.0, 1.0),
+            ),
+        };
 
         let sparkle_mix = sparkle * sparkle_strength;
         let base = lerp_color(base_a, base_b, cycle_t);
@@ -530,15 +538,16 @@ fn draw_camp_notices(game: &Game) {
         }
         let mut color = ACCENT;
         color.a = alpha;
-        draw_centered(notice.text, screen_height() * 0.5, REGION_NOTICE_SIZE, color);
+        draw_centered(
+            notice.text,
+            screen_height() * 0.5,
+            REGION_NOTICE_SIZE,
+            color,
+        );
     }
 }
 
-fn update_camp_notice_states(
-    notices: &mut [CampNotice],
-    now_inside: &[bool],
-    dt: f32,
-) {
+fn update_camp_notice_states(notices: &mut [CampNotice], now_inside: &[bool], dt: f32) {
     debug_assert_eq!(notices.len(), now_inside.len());
 
     let mut entered_index = None;
@@ -705,10 +714,9 @@ fn sparkle_alpha(base_alpha: f32, radius: f32, max_radius: f32) -> f32 {
 }
 
 fn sparkle_color(sparkle: &PentagramSparkle, time: f32, radius: f32) -> Color {
-    let hue = (sparkle.hue_seed
-        + time * PENTAGRAM_SPARKLE_HUE_SPEED
-        + radius / sparkle.max_radius * 0.5)
-        % 1.0;
+    let hue =
+        (sparkle.hue_seed + time * PENTAGRAM_SPARKLE_HUE_SPEED + radius / sparkle.max_radius * 0.5)
+            % 1.0;
     hsv_to_rgb(hue, 0.9, 1.0)
 }
 
@@ -761,7 +769,12 @@ fn saturate_color(color: Color, amount: f32) -> Color {
     let r = (gray + (color.r - gray) * amount).clamp(0.0, 1.0);
     let g = (gray + (color.g - gray) * amount).clamp(0.0, 1.0);
     let b = (gray + (color.b - gray) * amount).clamp(0.0, 1.0);
-    Color { r, g, b, a: color.a }
+    Color {
+        r,
+        g,
+        b,
+        a: color.a,
+    }
 }
 
 fn handle_camera(game: &mut Game) {
@@ -787,7 +800,8 @@ fn handle_camera(game: &mut Game) {
 fn build_camera(game: &Game) -> Camera2D {
     let screen = vec2(screen_width(), screen_height());
     let view = camera::view_size(screen, game.camera.zoom);
-    let player_center = game.player.pos + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
+    let player_center =
+        game.player.pos + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
     let target = camera::clamp_target(
         player_center + game.camera.pan,
         vec2(game.map.width, game.map.height),
@@ -804,7 +818,12 @@ fn build_camera(game: &Game) -> Camera2D {
 fn camera_view_rect(game: &Game, target: Vec2) -> Rect {
     let screen = vec2(screen_width(), screen_height());
     let view = camera::view_size(screen, game.camera.zoom);
-    Rect::new(target.x - view.x * 0.5, target.y - view.y * 0.5, view.x, view.y)
+    Rect::new(
+        target.x - view.x * 0.5,
+        target.y - view.y * 0.5,
+        view.x,
+        view.y,
+    )
 }
 
 fn draw_centered(text: &str, y: f32, size: f32, color: Color) {
@@ -841,7 +860,10 @@ mod tests {
     #[test]
     fn player_in_pentagram_center_respects_radius() {
         let centers = vec![vec2(0.0, 0.0)];
-        assert!(player_in_pentagram(vec2(PENTAGRAM_CENTER_RADIUS * 0.5, 0.0), &centers));
+        assert!(player_in_pentagram(
+            vec2(PENTAGRAM_CENTER_RADIUS * 0.5, 0.0),
+            &centers
+        ));
         assert!(!player_in_pentagram(
             vec2(PENTAGRAM_CENTER_RADIUS * 1.1, 0.0),
             &centers
@@ -885,10 +907,7 @@ mod tests {
 
     #[test]
     fn camp_notice_switches_on_new_entry() {
-        let mut notices = vec![
-            CampNotice::new("a", "A"),
-            CampNotice::new("b", "B"),
-        ];
+        let mut notices = vec![CampNotice::new("a", "A"), CampNotice::new("b", "B")];
 
         update_camp_notice_states(&mut notices, &[true, false], 0.1);
         assert_eq!(notices[0].timer, 0.0);
@@ -928,16 +947,9 @@ mod tests {
 
     #[test]
     fn total_hippie_flags_sums_carried_flags() {
-        let camp = [
-            vec2(0.0, 0.0),
-            vec2(10.0, 0.0),
-            vec2(0.0, 10.0),
-        ];
-        let hippies = npc::spawn_hippies_with_flags(
-            &[(vec2(1.0, 1.0), 1), (vec2(2.0, 2.0), 2)],
-            0,
-            &camp,
-        );
+        let camp = [vec2(0.0, 0.0), vec2(10.0, 0.0), vec2(0.0, 10.0)];
+        let hippies =
+            npc::spawn_hippies_with_flags(&[(vec2(1.0, 1.0), 1), (vec2(2.0, 2.0), 2)], 0, &camp);
         assert_eq!(total_hippie_flags(&hippies), 3);
     }
 }

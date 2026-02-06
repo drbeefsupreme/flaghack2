@@ -13,13 +13,19 @@ This repo is a Rust/Macroquad prototype of **Flaghack2**, a 2D roguelike with sm
   - Game state machine: `Title` → `ClassSelect` → `Dungeon`
   - Input handling, camera logic, HUD
   - Now uses `src/constants.rs` for shared constants
+- `src/camps.rs`
+  - Camp definitions (polygons, colors, notice text)
+  - Centralized spawn lists for tents/chairs/campfires/flags/hippies per camp
+  - Current camps: t3mpcamp, Georgia Peanuts, DeBussy Bus Station
 - `src/hud.rs`
   - HUD rendering (flags, speed, total flags, player coordinates)
+- `src/flag_state.rs`
+  - Centralized flag inventory/transfer logic (ground/player/hippies) + total invariant tracking
 - `src/map.rs`
   - Loads tiled PNGs from `assets/map/tiles/`
   - Draws only visible tiles
   - Map dimensions + travel speed helpers
-  - `MapRegion::contains_point` for region entry checks
+  - `MapRegion::contains_point` for camp entry checks
 - `src/camera.rs`
   - Camera state (zoom + pan + drag)
   - `DEFAULT_ZOOM = 4.0`
@@ -31,6 +37,8 @@ This repo is a Rust/Macroquad prototype of **Flaghack2**, a 2D roguelike with sm
   - Flag data + placement/pickup logic
   - Wiggle animation, wind support
   - `make_flag` helper for spawning dropped flags with phase
+- `src/geom.rs`
+  - Geometry helpers (polygon bounds, point-in-polygon, line sampling)
 - `src/ley_lines.rs`
   - Ley line geometry between nearby flags
   - Pentagram detection (5-flag ring) marks lines as `Pentagram`
@@ -40,11 +48,15 @@ This repo is a Rust/Macroquad prototype of **Flaghack2**, a 2D roguelike with sm
   - Crystal dome fixed at `(4900, 3184)` and large campfire at `T3MPCAMP_CAMPFIRE_POS`
 - `src/npc.rs`
   - Hippie NPCs (stick figure) with facing, wandering inside polygon region
-  - Spawned around the t3mpcamp campfire
+  - Spawned via camp spawn lists
   - Hippies can carry up to 2 flags, pick up nearby flags, and drop them on a timer
   - Stealing flags makes them angry: red/orange cycling head glow, chase at ~66% player speed
   - Angry hippies steal flags back, then flee for 10 seconds
   - 1s anger delay before they can steal back
+  - Angry hippies ignore camp boundaries; calm hippies return to camp
+  - Hippies keep a collision bubble so they do not overlap
+  - If the player has no flags, hippies stop chasing
+  - Random initial flags per hippie (33% chance of 1, 10% chance of 2)
 - `src/scale.rs`
   - `MODEL_SCALE = 0.25` + helper `scaled()`
 - `src/constants.rs`
@@ -75,7 +87,8 @@ convert /tmp/alchemy_map_padded.png -crop 1024x1024 +repage /tmp/map_tiles/tile_
 - Standing in a pentagram center spawns rainbow sparkles that persist until they fade out at max radius.
 - Camera pans with middle mouse drag; zooms with mouse wheel.
 - HUD includes flags count, speed, total flags, and player coordinates (bottom-right).
-- Entering the t3mpcamp region shows `t3mpcamp.com` centered for 4 seconds with 0.5s fade in/out.
+- Entering a camp shows its banner centered for 4 seconds with 0.5s fade in/out. Names switch instantly when crossing between camps.
+- Current camps: t3mpcamp (`t3mpcamp.com`), Georgia Peanuts, DeBussy Bus Station.
 - Hippies drop one flag with 25% chance every 30s and ignore pickups for 30s after a drop.
 - Total flags in the game are treated as an invariant (debug assert + HUD total).
 
@@ -102,8 +115,9 @@ cargo test --release
 - Ley lines now shimmer purple/pink normally, shift to red/orange for pentagrams.
 - Pentagram centers tracked for sparkle effects.
 - Sparkle system is time-based spawn; particles travel outward, fade to 0 at max radius, and persist after leaving the pentagram.
-- t3mpcamp region detection drives a transient center-screen banner.
-- Hippie NPCs added with simple stick-figure model and bounded wandering.
-- Hippies can carry/pick up flags, steal from the player (RMB), get angry, chase, steal back, and flee.
-- Hippies can drop flags on a timer and temporarily ignore pickups.
+- Camps system added in `src/camps.rs` (t3mpcamp, Georgia Peanuts, DeBussy Bus Station) with spawn lists for scenery, flags, and hippies.
+- Camp banner system now uses camp names and switches immediately between overlapping camps.
+- Hippie NPCs added with simple stick-figure model and bounded wandering; angry hippies can chase outside camp and calm hippies return.
+- Hippies can carry/pick up flags, steal from the player (RMB), get angry, chase, steal back, and flee; they stop chasing if the player has no flags.
+- Hippies can drop flags on a timer and temporarily ignore pickups; they also maintain a small collision bubble.
 - HUD moved into `src/hud.rs` and shows total flag count.

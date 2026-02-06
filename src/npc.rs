@@ -56,11 +56,7 @@ pub fn try_steal_flag(
     false
 }
 
-pub fn spawn_hippies(
-    positions: &[Vec2],
-    camp_index: usize,
-    camp_vertices: &[Vec2],
-) -> Vec<Hippie> {
+pub fn spawn_hippies(positions: &[Vec2], camp_index: usize, camp_vertices: &[Vec2]) -> Vec<Hippie> {
     positions
         .iter()
         .enumerate()
@@ -225,7 +221,12 @@ pub fn update_hippies(
 
 pub fn draw_hippies(hippies: &[Hippie]) {
     for hippie in hippies {
-        draw_hippie(hippie.pos, hippie.facing, hippie.carried_flags, hippie.angry);
+        draw_hippie(
+            hippie.pos,
+            hippie.facing,
+            hippie.carried_flags,
+            hippie.angry,
+        );
     }
 }
 
@@ -252,7 +253,12 @@ fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8, angry: bool
             Color::new(glow.r, glow.g, glow.b, 0.6),
         );
     }
-    draw_circle(head_center.x, head_center.y, HIPPIE_HEAD_RADIUS + 1.0, outline);
+    draw_circle(
+        head_center.x,
+        head_center.y,
+        HIPPIE_HEAD_RADIUS + 1.0,
+        outline,
+    );
     draw_circle(head_center.x, head_center.y, HIPPIE_HEAD_RADIUS, skin);
 
     draw_line(
@@ -270,8 +276,14 @@ fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8, angry: bool
         _ => vec2(0.0, 0.0),
     };
 
-    let arm_left = vec2(pos.x - HIPPIE_ARM_LENGTH * 0.6, pos.y - HIPPIE_BODY_LENGTH * 0.2);
-    let arm_right = vec2(pos.x + HIPPIE_ARM_LENGTH * 0.6, pos.y - HIPPIE_BODY_LENGTH * 0.2);
+    let arm_left = vec2(
+        pos.x - HIPPIE_ARM_LENGTH * 0.6,
+        pos.y - HIPPIE_BODY_LENGTH * 0.2,
+    );
+    let arm_right = vec2(
+        pos.x + HIPPIE_ARM_LENGTH * 0.6,
+        pos.y - HIPPIE_BODY_LENGTH * 0.2,
+    );
     let left_hand = arm_left + vec2(-HIPPIE_ARM_LENGTH * 0.5, 0.0) + arm_offset;
     let right_hand = arm_right + vec2(HIPPIE_ARM_LENGTH * 0.5, 0.0) + arm_offset;
 
@@ -295,8 +307,14 @@ fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8, angry: bool
     draw_circle(right_hand.x, right_hand.y, HIPPIE_HAND_RADIUS, skin);
 
     let leg_offset = HIPPIE_LEG_LENGTH * 0.5;
-    let left_foot = vec2(pos.x - leg_offset * 0.4, pos.y + HIPPIE_BODY_LENGTH * 0.5 + HIPPIE_LEG_LENGTH);
-    let right_foot = vec2(pos.x + leg_offset * 0.4, pos.y + HIPPIE_BODY_LENGTH * 0.5 + HIPPIE_LEG_LENGTH);
+    let left_foot = vec2(
+        pos.x - leg_offset * 0.4,
+        pos.y + HIPPIE_BODY_LENGTH * 0.5 + HIPPIE_LEG_LENGTH,
+    );
+    let right_foot = vec2(
+        pos.x + leg_offset * 0.4,
+        pos.y + HIPPIE_BODY_LENGTH * 0.5 + HIPPIE_LEG_LENGTH,
+    );
 
     draw_line(
         body_bottom.x,
@@ -336,8 +354,15 @@ fn draw_hand_flag(hand: Vec2, facing: player::Facing) {
 
     let pole_top = hand + rotate_vec(vec2(0.0, -constants::FLAG_POLE_HEIGHT), rotation);
     let cloth_anchor = pole_top
-        + rotate_vec(vec2(cloth_sign * constants::FLAG_POLE_WIDTH * 0.5, 0.0), rotation);
-    let cloth_offset = if cloth_sign < 0.0 { vec2(1.0, 0.0) } else { vec2(0.0, 0.0) };
+        + rotate_vec(
+            vec2(cloth_sign * constants::FLAG_POLE_WIDTH * 0.5, 0.0),
+            rotation,
+        );
+    let cloth_offset = if cloth_sign < 0.0 {
+        vec2(1.0, 0.0)
+    } else {
+        vec2(0.0, 0.0)
+    };
     draw_rotated_rect(
         cloth_anchor,
         constants::FLAG_CLOTH_SIZE,
@@ -350,10 +375,7 @@ fn draw_hand_flag(hand: Vec2, facing: player::Facing) {
 fn hippie_flag_orientation(facing: player::Facing) -> (f32, f32) {
     match facing {
         player::Facing::Left => (-HIPPIE_FLAG_ANGLE, -1.0),
-        player::Facing::Right => (
-            HIPPIE_FLAG_ANGLE - std::f32::consts::FRAC_PI_2,
-            1.0,
-        ),
+        player::Facing::Right => (HIPPIE_FLAG_ANGLE - std::f32::consts::FRAC_PI_2, 1.0),
         _ => (-HIPPIE_FLAG_ANGLE, 1.0),
     }
 }
@@ -525,11 +547,7 @@ fn resolve_hippie_collisions(positions: &mut [Vec2], min_distance: f32) {
     }
 }
 
-fn nearest_hippie_with_flag(
-    hippies: &[Hippie],
-    origin: Vec2,
-    radius: f32,
-) -> Option<usize> {
+fn nearest_hippie_with_flag(hippies: &[Hippie], origin: Vec2, radius: f32) -> Option<usize> {
     let mut best = None;
     let mut best_d2 = radius * radius;
     for (i, hippie) in hippies.iter().enumerate() {
@@ -605,8 +623,8 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flags;
     use crate::flag_state::FlagState;
+    use crate::flags;
 
     #[test]
     fn point_in_polygon_detects_inside() {
@@ -681,7 +699,9 @@ mod tests {
         update_hippie_drop(&mut hippies[0], 0.1, &mut flag_state);
         assert_eq!(hippies[0].carried_flags, 0);
         assert_eq!(flag_state.ground_flags().len(), 1);
-        assert!((hippies[0].ignore_flags_timer - constants::HIPPIE_FLAG_IGNORE_DURATION).abs() < 1e-6);
+        assert!(
+            (hippies[0].ignore_flags_timer - constants::HIPPIE_FLAG_IGNORE_DURATION).abs() < 1e-6
+        );
     }
 
     #[test]
@@ -695,7 +715,10 @@ mod tests {
         let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 0)], 0, &square);
         hippies[0].ignore_flags_timer = constants::HIPPIE_FLAG_IGNORE_DURATION;
         let mut flag_state = FlagState::new(
-            vec![flags::Flag { pos: vec2(5.0, 5.0), phase: 0.0 }],
+            vec![flags::Flag {
+                pos: vec2(5.0, 5.0),
+                phase: 0.0,
+            }],
             0,
             1,
         );
@@ -722,9 +745,18 @@ mod tests {
         ];
         let mut hippies = spawn_hippies_with_flags(&[(vec2(10.0, 10.0), 0)], 0, &square);
         let flags = vec![
-            flags::Flag { pos: vec2(10.0, 11.0), phase: 0.0 },
-            flags::Flag { pos: vec2(9.0, 10.0), phase: 0.0 },
-            flags::Flag { pos: vec2(12.0, 10.0), phase: 0.0 },
+            flags::Flag {
+                pos: vec2(10.0, 11.0),
+                phase: 0.0,
+            },
+            flags::Flag {
+                pos: vec2(9.0, 10.0),
+                phase: 0.0,
+            },
+            flags::Flag {
+                pos: vec2(12.0, 10.0),
+                phase: 0.0,
+            },
         ];
         let mut flag_state = FlagState::new(flags, 0, 3);
         let camps = vec![square.clone()];
@@ -752,7 +784,10 @@ mod tests {
         let mut hippies = spawn_hippies_with_flags(&[(vec2(10.0, 10.0), 0)], 0, &square);
         hippies[0].carried_flags = HIPPIE_FLAG_CAPACITY;
         let mut flag_state = FlagState::new(
-            vec![flags::Flag { pos: vec2(10.0, 10.0), phase: 0.0 }],
+            vec![flags::Flag {
+                pos: vec2(10.0, 10.0),
+                phase: 0.0,
+            }],
             0,
             3,
         );
@@ -787,7 +822,10 @@ mod tests {
         let (rotation, cloth_sign) = hippie_flag_orientation(player::Facing::Right);
         let pole_top = hand + rotate_vec(vec2(0.0, -constants::FLAG_POLE_HEIGHT), rotation);
         let cloth_anchor = pole_top
-            + rotate_vec(vec2(cloth_sign * constants::FLAG_POLE_WIDTH * 0.5, 0.0), rotation);
+            + rotate_vec(
+                vec2(cloth_sign * constants::FLAG_POLE_WIDTH * 0.5, 0.0),
+                rotation,
+            );
         let distance = cloth_anchor.distance(pole_top);
         assert!((distance - constants::FLAG_POLE_WIDTH * 0.5).abs() < 1e-4);
     }
@@ -1180,11 +1218,8 @@ mod tests {
             vec2(200.0, 200.0),
             vec2(0.0, 200.0),
         ];
-        let mut hippies = spawn_hippies_with_flags(
-            &[(vec2(40.0, 50.0), 0), (vec2(60.0, 50.0), 0)],
-            0,
-            &camp,
-        );
+        let mut hippies =
+            spawn_hippies_with_flags(&[(vec2(40.0, 50.0), 0), (vec2(60.0, 50.0), 0)], 0, &camp);
         for hippie in &mut hippies {
             hippie.angry = true;
             hippie.anger_timer = constants::HIPPIE_ANGER_DURATION;

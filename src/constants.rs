@@ -9,10 +9,8 @@ pub const HUD_HEIGHT: f32 = 48.0;
 pub const FLAG_INTERACT_RADIUS: f32 = 48.0 * scale::MODEL_SCALE;
 pub const FLAG_POLE_HEIGHT: f32 = 36.0 * scale::MODEL_SCALE;
 pub const FLAG_POLE_WIDTH: f32 = 3.0 * scale::MODEL_SCALE;
-pub const FLAG_CLOTH_SIZE: Vec2 =
-    Vec2::new(22.0 * scale::MODEL_SCALE, 14.0 * scale::MODEL_SCALE);
-pub const FLAG_PLACE_OFFSET: Vec2 =
-    Vec2::new(28.0 * scale::MODEL_SCALE, 0.0);
+pub const FLAG_CLOTH_SIZE: Vec2 = Vec2::new(22.0 * scale::MODEL_SCALE, 14.0 * scale::MODEL_SCALE);
+pub const FLAG_PLACE_OFFSET: Vec2 = Vec2::new(28.0 * scale::MODEL_SCALE, 0.0);
 pub const FLAG_COUNT_START: usize = 10;
 pub const STARTING_FLAG_INVENTORY: u32 = 10;
 pub const LEY_MAX_DISTANCE: f32 = 150.0;

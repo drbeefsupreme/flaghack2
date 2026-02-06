@@ -110,9 +110,10 @@ pub fn collect_camp_vertices(camps: &[CampConfig]) -> Vec<Vec<Vec2>> {
 fn t3mpcamp_spawns() -> CampSpawns {
     let mut spawns = CampSpawns::default();
 
-    spawns
-        .scenery
-        .push(ScenerySpawn::campfire(T3MPCAMP_CAMPFIRE_POS, T3MPCAMP_CAMPFIRE_SCALE));
+    spawns.scenery.push(ScenerySpawn::campfire(
+        T3MPCAMP_CAMPFIRE_POS,
+        T3MPCAMP_CAMPFIRE_SCALE,
+    ));
 
     let rows = [
         (T3MPCAMP_ROW1_START, T3MPCAMP_ROW1_END),
@@ -163,7 +164,11 @@ fn georgia_peanuts_spawns() -> CampSpawns {
         vec2(5270.0, 3150.0),
     ];
 
-    spawns.hippies = vec![vec2(5175.0, 3190.0), vec2(5215.0, 3205.0), vec2(5265.0, 3235.0)];
+    spawns.hippies = vec![
+        vec2(5175.0, 3190.0),
+        vec2(5215.0, 3205.0),
+        vec2(5265.0, 3235.0),
+    ];
 
     spawns
 }
@@ -191,7 +196,11 @@ fn debussy_bus_spawns() -> CampSpawns {
         vec2(4940.0, 3070.0),
     ];
 
-    spawns.hippies = vec![vec2(4860.0, 3050.0), vec2(4895.0, 3020.0), vec2(4935.0, 3055.0)];
+    spawns.hippies = vec![
+        vec2(4860.0, 3050.0),
+        vec2(4895.0, 3020.0),
+        vec2(4935.0, 3055.0),
+    ];
 
     spawns
 }

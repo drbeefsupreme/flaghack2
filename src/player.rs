@@ -1,5 +1,5 @@
-use macroquad::prelude::*;
 use crate::scale;
+use macroquad::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Facing {
@@ -65,7 +65,12 @@ pub fn draw_player(top_left: Vec2, accent: Color, facing: Facing) {
     );
 
     let head_color = head_color(facing);
-    draw_circle(parts.head_center.x, parts.head_center.y, parts.head_radius, head_color);
+    draw_circle(
+        parts.head_center.x,
+        parts.head_center.y,
+        parts.head_radius,
+        head_color,
+    );
     draw_circle_lines(
         parts.head_center.x,
         parts.head_center.y,
@@ -101,7 +106,10 @@ fn compute_player_parts(top_left: Vec2, facing: Facing) -> PlayerParts {
 
     let hand_y = body_y + BODY_H * 0.45;
     let left_pos = vec2(body_x - HAND_RADIUS - 1.0 * scale::MODEL_SCALE, hand_y);
-    let right_pos = vec2(body_x + BODY_W + HAND_RADIUS + 1.0 * scale::MODEL_SCALE, hand_y);
+    let right_pos = vec2(
+        body_x + BODY_W + HAND_RADIUS + 1.0 * scale::MODEL_SCALE,
+        hand_y,
+    );
     let center_pos = vec2(body_x + BODY_W * 0.5, hand_y);
 
     let (left_visible, right_visible) = match facing {
@@ -118,12 +126,20 @@ fn compute_player_parts(top_left: Vec2, facing: Facing) -> PlayerParts {
         hat: [hat_top, hat_left, hat_right],
         hat_band,
         hand_left: Hand {
-            pos: if facing == Facing::Left { center_pos } else { left_pos },
+            pos: if facing == Facing::Left {
+                center_pos
+            } else {
+                left_pos
+            },
             side: HandSide::Left,
             visible: left_visible,
         },
         hand_right: Hand {
-            pos: if facing == Facing::Right { center_pos } else { right_pos },
+            pos: if facing == Facing::Right {
+                center_pos
+            } else {
+                right_pos
+            },
             side: HandSide::Right,
             visible: right_visible,
         },

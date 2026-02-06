@@ -1,5 +1,5 @@
-use macroquad::prelude::{Rect, Vec2};
 use crate::scale;
+use macroquad::prelude::{Rect, Vec2};
 use macroquad::rand::gen_range;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -137,12 +137,7 @@ pub fn flag_parts(base: Vec2, pole_height: f32, pole_width: f32, cloth_size: Vec
         pole_height,
     );
 
-    let cloth = Rect::new(
-        pole.x + pole.w,
-        pole.y,
-        cloth_size.x,
-        cloth_size.y,
-    );
+    let cloth = Rect::new(pole.x + pole.w, pole.y, cloth_size.x, cloth_size.y);
 
     (pole, cloth)
 }

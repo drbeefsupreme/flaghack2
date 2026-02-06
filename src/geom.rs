@@ -13,8 +13,7 @@ pub fn point_in_polygon(point: Vec2, vertices: &[Vec2]) -> bool {
         let vi = vertices[i];
         let vj = vertices[j];
         let intersects = (vi.y > point.y) != (vj.y > point.y)
-            && point.x
-                < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y + f32::EPSILON) + vi.x;
+            && point.x < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y + f32::EPSILON) + vi.x;
         if intersects {
             inside = !inside;
         }
@@ -82,8 +81,7 @@ pub fn triangulate_polygon(vertices: &[Vec2]) -> Vec<[Vec2; 3]> {
                 continue;
             }
 
-            if triangle_area(vertices[prev], vertices[curr], vertices[next]).abs()
-                < POLYGON_EPSILON
+            if triangle_area(vertices[prev], vertices[curr], vertices[next]).abs() < POLYGON_EPSILON
             {
                 continue;
             }
@@ -94,7 +92,12 @@ pub fn triangulate_polygon(vertices: &[Vec2]) -> Vec<[Vec2; 3]> {
                     continue;
                 }
 
-                if point_in_triangle(vertices[idx], vertices[prev], vertices[curr], vertices[next]) {
+                if point_in_triangle(
+                    vertices[idx],
+                    vertices[prev],
+                    vertices[curr],
+                    vertices[next],
+                ) {
                     contains = true;
                     break;
                 }
@@ -206,11 +209,7 @@ mod tests {
 
     #[test]
     fn polygon_bounds_returns_min_max() {
-        let poly = vec![
-            vec2(-2.0, 3.0),
-            vec2(5.0, -1.0),
-            vec2(1.0, 4.0),
-        ];
+        let poly = vec![vec2(-2.0, 3.0), vec2(5.0, -1.0), vec2(1.0, 4.0)];
         let (min, max) = polygon_bounds(&poly).expect("bounds");
         assert_eq!(min, vec2(-2.0, -1.0));
         assert_eq!(max, vec2(5.0, 4.0));

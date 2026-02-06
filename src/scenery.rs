@@ -1,7 +1,7 @@
-use macroquad::prelude::*;
-use macroquad::rand::gen_range;
 use crate::fire;
 use crate::scale;
+use macroquad::prelude::*;
+use macroquad::rand::gen_range;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SceneryKind {
@@ -345,15 +345,24 @@ fn draw_campfire(pos: Vec2, time: f32, scale: f32) {
         draw_ellipse(sx, sy, 6.0 * s, 4.0 * s, 0.0, stone_color);
     }
 
-    draw_rectangle(pos.x - 12.0 * s, pos.y - 3.0 * s, 24.0 * s, 6.0 * s, log_color);
-    draw_rectangle(pos.x - 8.0 * s, pos.y - 6.0 * s, 16.0 * s, 5.0 * s, log_color);
+    draw_rectangle(
+        pos.x - 12.0 * s,
+        pos.y - 3.0 * s,
+        24.0 * s,
+        6.0 * s,
+        log_color,
+    );
+    draw_rectangle(
+        pos.x - 8.0 * s,
+        pos.y - 6.0 * s,
+        16.0 * s,
+        5.0 * s,
+        log_color,
+    );
 
     let fire_pos = vec2(pos.x, pos.y - 8.0 * s);
     let fire_size = vec2(22.0 * s, 34.0 * s);
-    fire::draw_fire(
-        fire::Fire::new(fire_pos, fire_size),
-        time,
-    );
+    fire::draw_fire(fire::Fire::new(fire_pos, fire_size), time);
 }
 
 fn draw_crow_base(pos: Vec2, time: f32) {
@@ -406,10 +415,18 @@ fn draw_crow_base(pos: Vec2, time: f32) {
 
     let inner_edge = Color::new(0.18, 0.2, 0.28, 0.8);
     let inner_w = 1.1 * s;
-    draw_line(inner_tl.x, inner_tl.y, inner_tr.x, inner_tr.y, inner_w, inner_edge);
-    draw_line(inner_tr.x, inner_tr.y, inner_br.x, inner_br.y, inner_w, inner_edge);
-    draw_line(inner_br.x, inner_br.y, inner_bl.x, inner_bl.y, inner_w, inner_edge);
-    draw_line(inner_bl.x, inner_bl.y, inner_tl.x, inner_tl.y, inner_w, inner_edge);
+    draw_line(
+        inner_tl.x, inner_tl.y, inner_tr.x, inner_tr.y, inner_w, inner_edge,
+    );
+    draw_line(
+        inner_tr.x, inner_tr.y, inner_br.x, inner_br.y, inner_w, inner_edge,
+    );
+    draw_line(
+        inner_br.x, inner_br.y, inner_bl.x, inner_bl.y, inner_w, inner_edge,
+    );
+    draw_line(
+        inner_bl.x, inner_bl.y, inner_tl.x, inner_tl.y, inner_w, inner_edge,
+    );
 
     draw_crow_base_flame(tl, tr, bl, br, time);
     draw_crow_base_runes(inner_tl, inner_tr, inner_bl, inner_br, time);
@@ -460,7 +477,13 @@ fn draw_crow(pos: Vec2, time: f32) {
     let mast_left = vec2(head.x - 6.0 * s, head.y + head_radius * 0.2);
     let mast_right = vec2(head.x + 6.0 * s, head.y + head_radius * 0.2);
     draw_crow_glow_line(vec2(mast_left.x, perch.y), mast_left, 3.0 * s, metal, glow);
-    draw_crow_glow_line(vec2(mast_right.x, perch.y), mast_right, 3.0 * s, metal, glow);
+    draw_crow_glow_line(
+        vec2(mast_right.x, perch.y),
+        mast_right,
+        3.0 * s,
+        metal,
+        glow,
+    );
 
     draw_triangle(
         body_top + vec2(-10.0 * s, 4.0 * s),
@@ -468,15 +491,39 @@ fn draw_crow(pos: Vec2, time: f32) {
         body_bottom + vec2(0.0, -2.0 * s),
         metal_dim,
     );
-    draw_crow_glow_line(body_top + vec2(-10.0 * s, 4.0 * s), body_top + vec2(12.0 * s, 4.0 * s), 2.2 * s, metal, glow);
-    draw_crow_glow_line(body_top + vec2(12.0 * s, 4.0 * s), body_bottom + vec2(0.0, -2.0 * s), 2.2 * s, metal, glow);
-    draw_crow_glow_line(body_bottom + vec2(0.0, -2.0 * s), body_top + vec2(-10.0 * s, 4.0 * s), 2.2 * s, metal, glow);
+    draw_crow_glow_line(
+        body_top + vec2(-10.0 * s, 4.0 * s),
+        body_top + vec2(12.0 * s, 4.0 * s),
+        2.2 * s,
+        metal,
+        glow,
+    );
+    draw_crow_glow_line(
+        body_top + vec2(12.0 * s, 4.0 * s),
+        body_bottom + vec2(0.0, -2.0 * s),
+        2.2 * s,
+        metal,
+        glow,
+    );
+    draw_crow_glow_line(
+        body_bottom + vec2(0.0, -2.0 * s),
+        body_top + vec2(-10.0 * s, 4.0 * s),
+        2.2 * s,
+        metal,
+        glow,
+    );
 
     draw_circle(head.x, head.y, head_radius, metal_dim);
     draw_crow_glow_line(head, beak, 2.0 * s, metal, glow);
 
     draw_crow_glow_line(body_bottom, tail, 2.0 * s, metal, glow);
-    draw_crow_glow_line(body_bottom + vec2(4.0 * s, 6.0 * s), tail + vec2(10.0 * s, 10.0 * s), 2.0 * s, metal, glow);
+    draw_crow_glow_line(
+        body_bottom + vec2(4.0 * s, 6.0 * s),
+        tail + vec2(10.0 * s, 10.0 * s),
+        2.0 * s,
+        metal,
+        glow,
+    );
 
     let left_upper = [
         body_center + vec2(-10.0 * s, -8.0 * s),
@@ -525,7 +572,13 @@ fn draw_wing_wire(upper: &[Vec2; 5], lower: &[Vec2; 5], core: Color, glow: Color
         draw_crow_glow_line(lower[i], lower[i + 1], width, core, glow);
         draw_crow_glow_line(upper[i], lower[i], width, core, glow);
     }
-    draw_crow_glow_line(*upper.last().unwrap(), *lower.last().unwrap(), width, core, glow);
+    draw_crow_glow_line(
+        *upper.last().unwrap(),
+        *lower.last().unwrap(),
+        width,
+        core,
+        glow,
+    );
 }
 
 fn draw_crow_glow_line(a: Vec2, b: Vec2, width: f32, core: Color, glow: Color) {
@@ -534,10 +587,7 @@ fn draw_crow_glow_line(a: Vec2, b: Vec2, width: f32, core: Color, glow: Color) {
 }
 
 fn draw_crow_base_runes(tl: Vec2, tr: Vec2, bl: Vec2, br: Vec2, time: f32) {
-    let rows = [
-        (0.32, 7, 0.55, 1usize),
-        (0.72, 10, 0.5, 5usize),
-    ];
+    let rows = [(0.32, 7, 0.55, 1usize), (0.72, 10, 0.5, 5usize)];
 
     for (v, count, size_scale, seed) in rows {
         draw_rune_row(tl, tr, bl, br, time, v, count, size_scale, seed);
@@ -572,7 +622,13 @@ fn draw_rune_row(
     for i in 0..count {
         let center = vec2(left.x + step * (i as f32 + 0.5), base_y);
         let phase = seed as f32 * 0.9 + i as f32 * 0.65 + v * 4.2;
-        draw_rune_glyph((i + seed) % RUNE_STROKES.len(), center, vec2(glyph_w, glyph_h), time, phase);
+        draw_rune_glyph(
+            (i + seed) % RUNE_STROKES.len(),
+            center,
+            vec2(glyph_w, glyph_h),
+            time,
+            phase,
+        );
     }
 }
 
@@ -759,15 +815,16 @@ fn draw_geodesic_dome(center: Vec2, time: f32, decorations: &[DomeDecoration]) {
         }
     };
 
-    let connect =
-        |lower: &[DomeVertex], upper: &[DomeVertex], edge_fn: &mut dyn FnMut(DomeVertex, DomeVertex)| {
-            for i in 0..upper.len() {
-                let li = ((i as f32 / upper.len() as f32) * lower.len() as f32).round() as usize
-                    % lower.len();
-                edge_fn(upper[i], lower[li]);
-                edge_fn(upper[i], lower[(li + 1) % lower.len()]);
-            }
-        };
+    let connect = |lower: &[DomeVertex],
+                   upper: &[DomeVertex],
+                   edge_fn: &mut dyn FnMut(DomeVertex, DomeVertex)| {
+        for i in 0..upper.len() {
+            let li = ((i as f32 / upper.len() as f32) * lower.len() as f32).round() as usize
+                % lower.len();
+            edge_fn(upper[i], lower[li]);
+            edge_fn(upper[i], lower[(li + 1) % lower.len()]);
+        }
+    };
 
     ring(&base, &mut edge);
     ring(&mid, &mut edge);
@@ -978,12 +1035,18 @@ mod tests {
         let items = spawn_scenery(field, &camp_spawns);
 
         let tents = items.iter().filter(|i| i.kind == SceneryKind::Tent).count();
-        let chairs = items.iter().filter(|i| i.kind == SceneryKind::Chair).count();
+        let chairs = items
+            .iter()
+            .filter(|i| i.kind == SceneryKind::Chair)
+            .count();
         let campfires = items
             .iter()
             .filter(|i| i.kind == SceneryKind::Campfire)
             .count();
-        let crow_bases = items.iter().filter(|i| i.kind == SceneryKind::CrowBase).count();
+        let crow_bases = items
+            .iter()
+            .filter(|i| i.kind == SceneryKind::CrowBase)
+            .count();
         let crows = items.iter().filter(|i| i.kind == SceneryKind::Crow).count();
         let trees = items.iter().filter(|i| i.kind == SceneryKind::Tree).count();
         let domes = items.iter().filter(|i| i.kind == SceneryKind::Dome).count();

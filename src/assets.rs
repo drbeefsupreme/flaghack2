@@ -34,19 +34,22 @@ mod tests {
 
     #[test]
     fn load_png_rgba_reads_pixels() {
-        let png_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/png/signifiersmark.png");
+        let png_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/png/signifiersmark.png");
         let raster = load_png_rgba(png_path.to_str().expect("Invalid path"));
 
         assert!(raster.width > 0);
         assert!(raster.height > 0);
-        assert_eq!(raster.pixels.len(), raster.width as usize * raster.height as usize * 4);
+        assert_eq!(
+            raster.pixels.len(),
+            raster.width as usize * raster.height as usize * 4
+        );
     }
 
     #[test]
     fn signifier_mark_has_transparency() {
-        let png_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/png/signifiersmark.png");
+        let png_path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/png/signifiersmark.png");
         let raster = load_png_rgba(png_path.to_str().expect("Invalid path"));
 
         let mut has_transparent = false;
@@ -65,7 +68,10 @@ mod tests {
             }
         }
 
-        assert!(has_transparent, "expected transparent pixels in signifier mark");
+        assert!(
+            has_transparent,
+            "expected transparent pixels in signifier mark"
+        );
         assert!(has_opaque, "expected opaque pixels in signifier mark");
     }
 }
