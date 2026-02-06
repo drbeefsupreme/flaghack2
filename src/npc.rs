@@ -1,5 +1,7 @@
 use macroquad::prelude::*;
 
+use crate::constants;
+use crate::flags;
 use crate::player;
 use crate::scale;
 
@@ -11,11 +13,15 @@ const HIPPIE_BODY_LENGTH: f32 = 18.0 * scale::MODEL_SCALE;
 const HIPPIE_ARM_LENGTH: f32 = 10.0 * scale::MODEL_SCALE;
 const HIPPIE_LEG_LENGTH: f32 = 12.0 * scale::MODEL_SCALE;
 const HIPPIE_HAND_RADIUS: f32 = 2.0 * scale::MODEL_SCALE;
+const HIPPIE_FLAG_CAPACITY: u8 = 2;
+const HIPPIE_FLAG_PICKUP_RADIUS: f32 = 20.0 * scale::MODEL_SCALE;
+const HIPPIE_FLAG_ANGLE: f32 = std::f32::consts::FRAC_PI_4;
 
 #[derive(Clone, Debug)]
 pub struct Hippie {
     pub pos: Vec2,
     pub facing: player::Facing,
+    pub carried_flags: u8,
     target: Vec2,
     speed: f32,
     rng_state: u32,
@@ -31,6 +37,7 @@ pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie
             Hippie {
                 pos,
                 facing: player::Facing::Down,
+                carried_flags: 0,
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
@@ -39,8 +46,40 @@ pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie
         .collect()
 }
 
-pub fn update_hippies(hippies: &mut [Hippie], dt: f32, region_vertices: &[Vec2]) {
+pub fn spawn_hippies_with_flags(
+    spawns: &[(Vec2, u8)],
+    region_vertices: &[Vec2],
+) -> Vec<Hippie> {
+    spawns
+        .iter()
+        .enumerate()
+        .map(|(i, &(pos, carried))| {
+            let mut rng_state = hash_seed(pos, i as u32);
+            let target = random_point_in_polygon(region_vertices, &mut rng_state);
+            Hippie {
+                pos,
+                facing: player::Facing::Down,
+                carried_flags: carried.min(HIPPIE_FLAG_CAPACITY),
+                target,
+                speed: HIPPIE_SPEED,
+                rng_state,
+            }
+        })
+        .collect()
+}
+
+pub fn update_hippies(
+    hippies: &mut [Hippie],
+    dt: f32,
+    region_vertices: &[Vec2],
+    flags: &mut Vec<flags::Flag>,
+) -> bool {
+    let mut picked_any = false;
     for hippie in hippies {
+        if hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
+            picked_any |= hippie_pickup_flags(hippie, flags);
+        }
+
         if hippie.pos.distance(hippie.target) <= HIPPIE_TARGET_EPSILON {
             hippie.target = random_point_in_polygon(region_vertices, &mut hippie.rng_state);
         }
@@ -63,15 +102,16 @@ pub fn update_hippies(hippies: &mut [Hippie], dt: f32, region_vertices: &[Vec2])
             hippie.target = random_point_in_polygon(region_vertices, &mut hippie.rng_state);
         }
     }
+    picked_any
 }
 
 pub fn draw_hippies(hippies: &[Hippie]) {
     for hippie in hippies {
-        draw_hippie(hippie.pos, hippie.facing);
+        draw_hippie(hippie.pos, hippie.facing, hippie.carried_flags);
     }
 }
 
-fn draw_hippie(pos: Vec2, facing: player::Facing) {
+fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8) {
     let head_center = vec2(pos.x, pos.y - HIPPIE_BODY_LENGTH * 0.5 - HIPPIE_HEAD_RADIUS);
     let body_top = vec2(pos.x, pos.y - HIPPIE_BODY_LENGTH * 0.5);
     let body_bottom = vec2(pos.x, pos.y + HIPPIE_BODY_LENGTH * 0.5);
@@ -143,6 +183,85 @@ fn draw_hippie(pos: Vec2, facing: player::Facing) {
         1.5 * scale::MODEL_SCALE,
         limbs,
     );
+
+    if carried_flags > 0 {
+        draw_hand_flag(left_hand, facing);
+    }
+    if carried_flags > 1 {
+        draw_hand_flag(right_hand, facing);
+    }
+}
+
+fn draw_hand_flag(hand: Vec2, facing: player::Facing) {
+    let (rotation, cloth_sign) = hippie_flag_orientation(facing);
+
+    draw_rotated_rect(
+        hand,
+        vec2(constants::FLAG_POLE_WIDTH, constants::FLAG_POLE_HEIGHT),
+        vec2(0.5, 1.0),
+        rotation,
+        Color::new(0.55, 0.44, 0.28, 1.0),
+    );
+
+    let pole_top = hand + rotate_vec(vec2(0.0, -constants::FLAG_POLE_HEIGHT), rotation);
+    let cloth_anchor = pole_top
+        + rotate_vec(vec2(cloth_sign * constants::FLAG_POLE_WIDTH * 0.5, 0.0), rotation);
+    let cloth_offset = if cloth_sign < 0.0 { vec2(1.0, 0.0) } else { vec2(0.0, 0.0) };
+    draw_rotated_rect(
+        cloth_anchor,
+        constants::FLAG_CLOTH_SIZE,
+        cloth_offset,
+        rotation,
+        constants::ACCENT,
+    );
+}
+
+fn hippie_flag_orientation(facing: player::Facing) -> (f32, f32) {
+    match facing {
+        player::Facing::Left => (-HIPPIE_FLAG_ANGLE, -1.0),
+        player::Facing::Right => (
+            HIPPIE_FLAG_ANGLE - std::f32::consts::FRAC_PI_2,
+            1.0,
+        ),
+        _ => (-HIPPIE_FLAG_ANGLE, 1.0),
+    }
+}
+
+fn draw_rotated_rect(center: Vec2, size: Vec2, offset: Vec2, rotation: f32, color: Color) {
+    draw_rectangle_ex(
+        center.x,
+        center.y,
+        size.x,
+        size.y,
+        DrawRectangleParams {
+            offset,
+            rotation,
+            color,
+        },
+    );
+}
+
+fn rotate_vec(point: Vec2, angle: f32) -> Vec2 {
+    vec2(
+        point.x * angle.cos() - point.y * angle.sin(),
+        point.x * angle.sin() + point.y * angle.cos(),
+    )
+}
+
+fn hippie_pickup_flags(hippie: &mut Hippie, flags: &mut Vec<flags::Flag>) -> bool {
+    let mut picked = false;
+    let mut index = 0;
+    while index < flags.len() && hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
+        let flag_pos = flags[index].pos;
+        if flag_pos.distance(hippie.pos) <= HIPPIE_FLAG_PICKUP_RADIUS {
+            flags.swap_remove(index);
+            hippie.carried_flags += 1;
+            picked = true;
+            continue;
+        }
+        index += 1;
+    }
+    picked
 }
 
 fn point_in_polygon(point: Vec2, vertices: &[Vec2]) -> bool {
@@ -249,9 +368,76 @@ mod tests {
             vec2(0.0, 20.0),
         ];
         let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
+        let mut flags = Vec::new();
         for _ in 0..60 {
-            update_hippies(&mut hippies, 0.1, &square);
+            update_hippies(&mut hippies, 0.1, &square, &mut flags);
             assert!(point_in_polygon(hippies[0].pos, &square));
         }
+    }
+
+    #[test]
+    fn hippie_picks_up_flags_until_full() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
+        let mut flags = vec![
+            flags::Flag { pos: vec2(10.0, 11.0), phase: 0.0 },
+            flags::Flag { pos: vec2(9.0, 10.0), phase: 0.0 },
+            flags::Flag { pos: vec2(12.0, 10.0), phase: 0.0 },
+        ];
+        let picked = update_hippies(&mut hippies, 0.0, &square, &mut flags);
+        assert!(picked);
+        assert_eq!(hippies[0].carried_flags, 2);
+        assert_eq!(flags.len(), 1);
+    }
+
+    #[test]
+    fn hippie_does_not_pick_up_when_full() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
+        hippies[0].carried_flags = HIPPIE_FLAG_CAPACITY;
+        let mut flags = vec![flags::Flag { pos: vec2(10.0, 10.0), phase: 0.0 }];
+        let picked = update_hippies(&mut hippies, 0.0, &square, &mut flags);
+        assert!(!picked);
+        assert_eq!(flags.len(), 1);
+    }
+
+    #[test]
+    fn spawn_hippies_with_flags_clamps_capacity() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 5)], &square);
+        assert_eq!(hippies[0].carried_flags, HIPPIE_FLAG_CAPACITY);
+    }
+
+    #[test]
+    fn hippie_flag_cloth_anchor_is_at_pole_top() {
+        let hand = vec2(0.0, 0.0);
+        let (rotation, cloth_sign) = hippie_flag_orientation(player::Facing::Right);
+        let pole_top = hand + rotate_vec(vec2(0.0, -constants::FLAG_POLE_HEIGHT), rotation);
+        let cloth_anchor = pole_top
+            + rotate_vec(vec2(cloth_sign * constants::FLAG_POLE_WIDTH * 0.5, 0.0), rotation);
+        let distance = cloth_anchor.distance(pole_top);
+        assert!((distance - constants::FLAG_POLE_WIDTH * 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn hippie_flag_right_facing_rotates_clockwise() {
+        let (rotation, _) = hippie_flag_orientation(player::Facing::Right);
+        let expected = HIPPIE_FLAG_ANGLE - std::f32::consts::FRAC_PI_2;
+        assert!((rotation - expected).abs() < 1e-6);
     }
 }

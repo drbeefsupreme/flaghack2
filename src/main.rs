@@ -66,10 +66,12 @@ impl Game {
             MAP_REGION_COLOR,
         )];
         let hippie_spawns = [
-            T3MPCAMP_CAMPFIRE_POS + vec2(-28.0, -16.0),
-            T3MPCAMP_CAMPFIRE_POS + vec2(26.0, 14.0),
+            (T3MPCAMP_CAMPFIRE_POS + vec2(-28.0, -16.0), 0),
+            (T3MPCAMP_CAMPFIRE_POS + vec2(26.0, 14.0), 0),
+            (T3MPCAMP_CAMPFIRE_POS + vec2(-12.0, 22.0), 1),
+            (T3MPCAMP_CAMPFIRE_POS + vec2(18.0, -24.0), 2),
         ];
-        let hippies = npc::spawn_hippies(&hippie_spawns, &T3MPCAMP_VERTICES);
+        let hippies = npc::spawn_hippies_with_flags(&hippie_spawns, &T3MPCAMP_VERTICES);
         let flags = flags::spawn_random_flags(
             FLAG_COUNT_START,
             field_rect,
@@ -223,7 +225,16 @@ fn render_dungeon(game: &mut Game) {
     let player_center = game.player.pos
         + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
     update_t3mpcamp_notice(game, player_center, dt);
-    npc::update_hippies(&mut game.hippies, dt, &T3MPCAMP_VERTICES);
+    let hippies_picked = npc::update_hippies(
+        &mut game.hippies,
+        dt,
+        &T3MPCAMP_VERTICES,
+        &mut game.flags,
+    );
+    if hippies_picked {
+        game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
+        game.pentagram_centers = ley_lines::pentagram_centers(&game.flags, LEY_MAX_DISTANCE);
+    }
 
     let camera = build_camera(game);
     let view_rect = camera_view_rect(game, camera.target);
