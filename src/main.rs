@@ -81,8 +81,7 @@ impl Game {
         );
         let total_flags =
             flags.len() as u32 + STARTING_FLAG_INVENTORY + total_hippie_flags(&hippies);
-        let ley_lines = ley_lines::compute_ley_lines(&flags, LEY_MAX_DISTANCE);
-        let pentagram_centers = ley_lines::pentagram_centers(&flags, LEY_MAX_DISTANCE);
+        let ley_state = ley_lines::compute_ley_state(&flags, LEY_MAX_DISTANCE);
         let player_speed = map::adjusted_travel_speed(
             map.width,
             map.height,
@@ -100,8 +99,8 @@ impl Game {
             flag_inventory: STARTING_FLAG_INVENTORY,
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
             scenery: scenery::spawn_scenery(field_rect),
-            ley_lines,
-            pentagram_centers,
+            ley_lines: ley_state.lines,
+            pentagram_centers: ley_state.pentagram_centers,
             pentagram_sparkles: Vec::new(),
             sparkle_spawn_accum: 0.0,
             sparkle_spawn_counter: 0,
@@ -240,8 +239,7 @@ fn render_dungeon(game: &mut Game) {
         game.player_speed,
     );
     if hippies_picked {
-        game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
-        game.pentagram_centers = ley_lines::pentagram_centers(&game.flags, LEY_MAX_DISTANCE);
+        recompute_ley_state(game);
     }
 
     let camera = build_camera(game);
@@ -325,8 +323,7 @@ fn handle_flag_interactions(game: &mut Game) {
             field,
         );
         if placed {
-            game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
-            game.pentagram_centers = ley_lines::pentagram_centers(&game.flags, LEY_MAX_DISTANCE);
+            recompute_ley_state(game);
             return;
         }
     }
@@ -334,8 +331,7 @@ fn handle_flag_interactions(game: &mut Game) {
     if is_mouse_button_pressed(MouseButton::Right) {
         if flags::try_pickup_flag(&mut game.flags, game.player.pos, FLAG_INTERACT_RADIUS) {
             game.flag_inventory = game.flag_inventory.saturating_add(1);
-            game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
-            game.pentagram_centers = ley_lines::pentagram_centers(&game.flags, LEY_MAX_DISTANCE);
+            recompute_ley_state(game);
         }
 
         let player_center = game.player.pos
@@ -432,6 +428,12 @@ fn current_total_flags(game: &Game) -> u32 {
 
 fn total_hippie_flags(hippies: &[npc::Hippie]) -> u32 {
     hippies.iter().map(|h| h.carried_flags as u32).sum()
+}
+
+fn recompute_ley_state(game: &mut Game) {
+    let state = ley_lines::compute_ley_state(&game.flags, LEY_MAX_DISTANCE);
+    game.ley_lines = state.lines;
+    game.pentagram_centers = state.pentagram_centers;
 }
 
 fn update_t3mpcamp_notice(game: &mut Game, player_center: Vec2, dt: f32) {

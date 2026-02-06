@@ -11,6 +11,12 @@ pub enum LeyLineKind {
     Pentagram,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct LeyState {
+    pub lines: Vec<LeyLine>,
+    pub pentagram_centers: Vec<Vec2>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LeyLine {
     pub a: Vec2,
@@ -19,16 +25,23 @@ pub struct LeyLine {
     pub kind: LeyLineKind,
 }
 
-pub fn compute_ley_lines(flags: &[Flag], max_distance: f32) -> Vec<LeyLine> {
+pub fn compute_ley_state(flags: &[Flag], max_distance: f32) -> LeyState {
     let mut lines = Vec::new();
 
     if flags.len() < 2 || max_distance <= 0.0 {
-        return lines;
+        return LeyState {
+            lines,
+            pentagram_centers: Vec::new(),
+        };
     }
 
-    let max_d2 = max_distance * max_distance;
-    let pentagrams = find_pentagrams(flags, max_distance);
+    let pentagrams = if flags.len() >= 5 {
+        find_pentagrams(flags, max_distance)
+    } else {
+        Vec::new()
+    };
     let pentagram_pairs = pentagram_pairs(&pentagrams);
+    let max_d2 = max_distance * max_distance;
 
     for i in 0..flags.len() {
         for j in (i + 1)..flags.len() {
@@ -54,14 +67,20 @@ pub fn compute_ley_lines(flags: &[Flag], max_distance: f32) -> Vec<LeyLine> {
         }
     }
 
-    lines
+    let pentagram_centers = pentagrams.iter().map(|p| p.center).collect();
+
+    LeyState {
+        lines,
+        pentagram_centers,
+    }
+}
+
+pub fn compute_ley_lines(flags: &[Flag], max_distance: f32) -> Vec<LeyLine> {
+    compute_ley_state(flags, max_distance).lines
 }
 
 pub fn pentagram_centers(flags: &[Flag], max_distance: f32) -> Vec<Vec2> {
-    find_pentagrams(flags, max_distance)
-        .into_iter()
-        .map(|pentagram| pentagram.center)
-        .collect()
+    compute_ley_state(flags, max_distance).pentagram_centers
 }
 
 struct Pentagram {
@@ -228,6 +247,24 @@ mod tests {
         let lines = compute_ley_lines(&flags, 80.0);
         assert_eq!(lines.len(), 10);
         assert!(lines.iter().all(|line| line.kind == LeyLineKind::Pentagram));
+    }
+
+    #[test]
+    fn compute_ley_state_returns_lines_and_centers() {
+        let radius = 45.0;
+        let mut flags = Vec::new();
+        for i in 0..5 {
+            let angle = i as f32 * std::f32::consts::TAU / 5.0;
+            flags.push(Flag {
+                pos: vec2(angle.cos() * radius, angle.sin() * radius),
+                phase: 0.0,
+            });
+        }
+
+        let state = compute_ley_state(&flags, 90.0);
+        assert_eq!(state.pentagram_centers.len(), 1);
+        assert_eq!(state.lines.len(), 10);
+        assert!(state.lines.iter().all(|line| line.kind == LeyLineKind::Pentagram));
     }
 
     #[test]
