@@ -55,6 +55,7 @@ pub const HIPPIE_FLEE_DURATION: f32 = 10.0;
 pub const HIPPIE_FLAG_DROP_INTERVAL: f32 = 30.0;
 pub const HIPPIE_FLAG_DROP_CHANCE: f32 = 0.25;
 pub const HIPPIE_FLAG_IGNORE_DURATION: f32 = 30.0;
+pub const HIPPIE_COLLISION_RADIUS: f32 = 10.0 * scale::MODEL_SCALE;
 pub const CAMERA_ZOOM_MIN: f32 = camera::DEFAULT_ZOOM * 0.25;
 pub const CAMERA_ZOOM_MAX: f32 = camera::DEFAULT_ZOOM * 2.0;
 pub const CAMERA_ZOOM_STEP: f32 = 0.1;

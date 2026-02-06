@@ -129,7 +129,10 @@ pub fn update_hippies(
     player_speed: f32,
 ) -> bool {
     let mut picked_any = false;
-    for hippie in hippies {
+    let mut desired_positions = Vec::with_capacity(hippies.len());
+    let mut inside_camps = Vec::with_capacity(hippies.len());
+    let mut angry_flags = Vec::with_capacity(hippies.len());
+    for hippie in hippies.iter_mut() {
         let camp = camp_for_index(camp_vertices, hippie.camp_index);
         let inside_camp = geom::point_in_polygon(hippie.pos, camp);
         update_hippie_drop(hippie, dt, flag_state);
@@ -185,13 +188,36 @@ pub fn update_hippies(
             hippie.pos + to_target.normalize() * step
         };
 
-        if angry || !inside_camp {
-            hippie.pos = next_pos;
+        let desired = if angry || !inside_camp {
+            next_pos
         } else if geom::point_in_polygon(next_pos, camp) {
-            hippie.pos = next_pos;
-        } else if hippie.flee_timer <= 0.0 {
-            hippie.target = random_point_in_polygon(camp, &mut hippie.rng_state);
+            next_pos
+        } else {
+            if hippie.flee_timer <= 0.0 {
+                hippie.target = random_point_in_polygon(camp, &mut hippie.rng_state);
+            }
+            hippie.pos
+        };
+
+        desired_positions.push(desired);
+        inside_camps.push(inside_camp);
+        angry_flags.push(angry);
+    }
+
+    resolve_hippie_collisions(
+        &mut desired_positions,
+        constants::HIPPIE_COLLISION_RADIUS * 2.0,
+    );
+
+    for (idx, hippie) in hippies.iter_mut().enumerate() {
+        let camp = camp_for_index(camp_vertices, hippie.camp_index);
+        let desired = desired_positions[idx];
+        let inside_camp = inside_camps[idx];
+        let angry = angry_flags[idx];
+        if !angry && inside_camp && !geom::point_in_polygon(desired, camp) {
+            continue;
         }
+        hippie.pos = desired;
     }
     picked_any
 }
@@ -455,6 +481,40 @@ fn angry_head_color(time: f32) -> Color {
 
 fn chase_speed(player_speed: f32) -> f32 {
     player_speed * constants::HIPPIE_CHASE_SPEED_FACTOR
+}
+
+fn resolve_hippie_collisions(positions: &mut [Vec2], min_distance: f32) {
+    if positions.len() < 2 {
+        return;
+    }
+
+    let min_sq = min_distance * min_distance;
+    for _ in 0..2 {
+        for i in 0..positions.len() {
+            for j in (i + 1)..positions.len() {
+                let delta = positions[i] - positions[j];
+                let dist_sq = delta.length_squared();
+                if dist_sq >= min_sq {
+                    continue;
+                }
+
+                let dist = dist_sq.sqrt();
+                let dir = if dist > 0.0 {
+                    delta / dist
+                } else {
+                    vec2(1.0, 0.0)
+                };
+                let push = if dist > 0.0 {
+                    (min_distance - dist) * 0.5
+                } else {
+                    min_distance * 0.5
+                };
+
+                positions[i] += dir * push;
+                positions[j] -= dir * push;
+            }
+        }
+    }
 }
 
 fn nearest_hippie_with_flag(
@@ -1072,5 +1132,46 @@ mod tests {
         );
         let after = hippies[0].pos.distance(hippies[0].target);
         assert!(after < before);
+    }
+
+    #[test]
+    fn hippie_collision_prevents_overlap() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(200.0, 0.0),
+            vec2(200.0, 200.0),
+            vec2(0.0, 200.0),
+        ];
+        let mut hippies = spawn_hippies_with_flags(
+            &[(vec2(40.0, 50.0), 0), (vec2(60.0, 50.0), 0)],
+            0,
+            &camp,
+        );
+        for hippie in &mut hippies {
+            hippie.angry = true;
+            hippie.anger_timer = constants::HIPPIE_ANGER_DURATION;
+            hippie.anger_delay = 0.0;
+            hippie.flee_timer = 0.0;
+            hippie.drop_check_timer = 0.0;
+            hippie.ignore_flags_timer = 0.0;
+        }
+
+        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let camps = vec![camp.clone()];
+        update_hippies(
+            &mut hippies,
+            1.0,
+            &camps,
+            &mut flag_state,
+            vec2(50.0, 50.0),
+            200.0,
+        );
+
+        let distance = hippies[0].pos.distance(hippies[1].pos);
+        assert!(
+            distance >= constants::HIPPIE_COLLISION_RADIUS * 2.0 - 1e-3,
+            "hippies too close after collision: {}",
+            distance
+        );
     }
 }
