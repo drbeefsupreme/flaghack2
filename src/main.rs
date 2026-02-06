@@ -43,6 +43,8 @@ struct Game {
     pentagram_sparkles: Vec<PentagramSparkle>,
     sparkle_spawn_accum: f32,
     sparkle_spawn_counter: u32,
+    flagic: u8,
+    flagic_accum: f32,
     t3mpcamp_inside: bool,
     t3mpcamp_notice_timer: f32,
     hippies: Vec<npc::Hippie>,
@@ -108,6 +110,8 @@ impl Game {
             pentagram_sparkles: Vec::new(),
             sparkle_spawn_accum: 0.0,
             sparkle_spawn_counter: 0,
+            flagic: 0,
+            flagic_accum: 0.0,
             t3mpcamp_inside: false,
             t3mpcamp_notice_timer: -1.0,
             hippies,
@@ -260,12 +264,14 @@ fn render_dungeon(game: &mut Game) {
     }
 
     player::draw_player(game.player.pos, ACCENT, game.player.facing);
+    let in_pentagram = player_in_pentagram(player_center, &game.pentagram_centers);
+    update_flagic(&mut game.flagic, &mut game.flagic_accum, in_pentagram, dt);
     update_pentagram_sparkles(
         &mut game.pentagram_sparkles,
         &mut game.sparkle_spawn_accum,
         &mut game.sparkle_spawn_counter,
         player_center,
-        player_in_pentagram(player_center, &game.pentagram_centers),
+        in_pentagram,
         time,
         dt,
         view_rect,
@@ -282,6 +288,7 @@ fn render_dungeon(game: &mut Game) {
         game.player_speed,
         game.player.pos,
         current_total_flags(game),
+        game.flagic,
     );
 
     game.flag_state
@@ -424,6 +431,31 @@ fn player_in_pentagram(pos: Vec2, centers: &[Vec2]) -> bool {
     centers
         .iter()
         .any(|center| center.distance(pos) <= PENTAGRAM_CENTER_RADIUS)
+}
+
+fn update_flagic(flagic: &mut u8, accum: &mut f32, in_pentagram: bool, dt: f32) {
+    if !in_pentagram || dt <= 0.0 {
+        return;
+    }
+
+    if *flagic >= FLAGIC_MAX {
+        *flagic = FLAGIC_MAX;
+        *accum = 0.0;
+        return;
+    }
+
+    *accum += dt * FLAGIC_GAIN_RATE;
+    let inc = accum.floor() as u32;
+    if inc == 0 {
+        return;
+    }
+    let next = (*flagic as u32 + inc).min(FLAGIC_MAX as u32);
+    *flagic = next as u8;
+    *accum -= inc as f32;
+    if *flagic >= FLAGIC_MAX {
+        *flagic = FLAGIC_MAX;
+        *accum = 0.0;
+    }
 }
 
 fn current_total_flags(game: &Game) -> u32 {
@@ -784,6 +816,33 @@ mod tests {
         assert!((t3mpcamp_notice_alpha(3.5) - 1.0).abs() < 1e-6);
         assert!((t3mpcamp_notice_alpha(3.75) - 0.5).abs() < 1e-4);
         assert!(t3mpcamp_notice_alpha(4.0) <= 1e-6);
+    }
+
+    #[test]
+    fn flagic_increases_while_in_pentagram() {
+        let mut flagic = 0u8;
+        let mut accum = 0.0;
+        update_flagic(&mut flagic, &mut accum, true, 0.2);
+        assert_eq!(flagic, 1);
+        assert!(accum.abs() < 1e-6);
+    }
+
+    #[test]
+    fn flagic_does_not_increase_outside_pentagram() {
+        let mut flagic = 0u8;
+        let mut accum = 0.0;
+        update_flagic(&mut flagic, &mut accum, false, 1.0);
+        assert_eq!(flagic, 0);
+        assert!(accum.abs() < 1e-6);
+    }
+
+    #[test]
+    fn flagic_clamps_to_max() {
+        let mut flagic = 99u8;
+        let mut accum = 0.0;
+        update_flagic(&mut flagic, &mut accum, true, 1.0);
+        assert_eq!(flagic, FLAGIC_MAX);
+        assert!(accum.abs() < 1e-6);
     }
 
     #[test]
