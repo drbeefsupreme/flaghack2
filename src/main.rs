@@ -12,6 +12,7 @@ mod player;
 mod map;
 mod constants;
 mod npc;
+mod hud;
 
 use constants::*;
 
@@ -276,7 +277,12 @@ fn render_dungeon(game: &mut Game) {
     draw_centered("WASD to move", 110.0, 20.0, ACCENT);
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
     draw_centered("Q to quit", 160.0, 20.0, ACCENT);
-    draw_hud(game.flag_inventory, game.player_speed, game.player.pos);
+    hud::draw_hud(
+        game.flag_inventory,
+        game.player_speed,
+        game.player.pos,
+        current_total_flags(game),
+    );
 
     debug_assert_eq!(game.total_flags, current_total_flags(game));
 
@@ -354,22 +360,6 @@ fn draw_flag(flag: &flags::Flag, time: f32, wind: flags::Wind) {
     );
 
     draw_rectangle(cloth.x + wiggle.x, cloth.y + wiggle.y, cloth.w, cloth.h, ACCENT);
-}
-
-fn draw_hud(flag_count: u32, speed: f32, player_pos: Vec2) {
-    let y = screen_height() - HUD_HEIGHT;
-    draw_rectangle(0.0, y, screen_width(), HUD_HEIGHT, BLACK);
-
-    let text = format!("Flags: {}", flag_count);
-    draw_text(&text, 16.0, y + 32.0, 26.0, ACCENT);
-
-    let speed_text = format!("Speed: {:.1}px/s", speed);
-    draw_text(&speed_text, 180.0, y + 32.0, 20.0, ACCENT);
-
-    let coords = format_player_coords(player_pos);
-    let metrics = measure_text(&coords, None, 20, 1.0);
-    let x = screen_width() - metrics.width - 16.0;
-    draw_text(&coords, x, y + 32.0, 20.0, ACCENT);
 }
 
 fn draw_ley_lines(lines: &[ley_lines::LeyLine], time: f32) {
@@ -719,19 +709,9 @@ fn draw_centered(text: &str, y: f32, size: f32, color: Color) {
     draw_text(text, x, y, size, color);
 }
 
-fn format_player_coords(pos: Vec2) -> String {
-    format!("X: {:.0}  Y: {:.0}", pos.x, pos.y)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn format_player_coords_rounds_to_whole_numbers() {
-        let text = format_player_coords(vec2(12.4, 13.6));
-        assert_eq!(text, "X: 12  Y: 14");
-    }
 
     #[test]
     fn starting_flag_inventory_is_ten() {
