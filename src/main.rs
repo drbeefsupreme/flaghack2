@@ -95,7 +95,7 @@ impl Game {
         let mut hippies = Vec::new();
         for (region_index, region) in region_configs.iter().enumerate() {
             if !region.spawns.hippies.is_empty() {
-                hippies.extend(npc::spawn_hippies_with_flags(
+                hippies.extend(npc::spawn_hippies(
                     &region.spawns.hippies,
                     region_index,
                     &region.vertices,

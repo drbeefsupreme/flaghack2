@@ -16,7 +16,7 @@ pub struct RegionConfig {
 pub struct RegionSpawns {
     pub scenery: Vec<ScenerySpawn>,
     pub flags: Vec<Vec2>,
-    pub hippies: Vec<(Vec2, u8)>,
+    pub hippies: Vec<Vec2>,
 }
 
 const T3MPCAMP_NAME: &str = "t3mpcamp";
@@ -47,6 +47,16 @@ const GEORGIA_PEANUTS_VERTICES: [Vec2; 4] = [
     Vec2::new(5329.0, 3274.0),
 ];
 
+const DEBUSSY_BUS_NAME: &str = "DeBussy Bus Station";
+const DEBUSSY_BUS_NOTICE: &str = "DeBussy Bus Station";
+const DEBUSSY_BUS_COLOR: Color = Color::new(0.11, 0.58, 0.23, 1.0);
+const DEBUSSY_BUS_VERTICES: [Vec2; 4] = [
+    Vec2::new(4850.0, 3134.0),
+    Vec2::new(4784.0, 2933.0),
+    Vec2::new(4913.0, 2894.0),
+    Vec2::new(4975.0, 3092.0),
+];
+
 pub fn region_configs() -> Vec<RegionConfig> {
     let mut regions = Vec::new();
 
@@ -64,6 +74,14 @@ pub fn region_configs() -> Vec<RegionConfig> {
         color: GEORGIA_PEANUTS_COLOR,
         notice_text: GEORGIA_PEANUTS_NOTICE,
         spawns: georgia_peanuts_spawns(),
+    });
+
+    regions.push(RegionConfig {
+        name: DEBUSSY_BUS_NAME,
+        vertices: DEBUSSY_BUS_VERTICES.to_vec(),
+        color: DEBUSSY_BUS_COLOR,
+        notice_text: DEBUSSY_BUS_NOTICE,
+        spawns: debussy_bus_spawns(),
     });
 
     regions
@@ -111,10 +129,10 @@ fn t3mpcamp_spawns() -> RegionSpawns {
     }
 
     spawns.hippies = vec![
-        (T3MPCAMP_CAMPFIRE_POS + vec2(-28.0, -16.0), 0),
-        (T3MPCAMP_CAMPFIRE_POS + vec2(26.0, 14.0), 0),
-        (T3MPCAMP_CAMPFIRE_POS + vec2(-12.0, 22.0), 1),
-        (T3MPCAMP_CAMPFIRE_POS + vec2(18.0, -24.0), 2),
+        T3MPCAMP_CAMPFIRE_POS + vec2(-28.0, -16.0),
+        T3MPCAMP_CAMPFIRE_POS + vec2(26.0, 14.0),
+        T3MPCAMP_CAMPFIRE_POS + vec2(-12.0, 22.0),
+        T3MPCAMP_CAMPFIRE_POS + vec2(18.0, -24.0),
     ];
 
     spawns
@@ -145,11 +163,35 @@ fn georgia_peanuts_spawns() -> RegionSpawns {
         vec2(5270.0, 3150.0),
     ];
 
-    spawns.hippies = vec![
-        (vec2(5175.0, 3190.0), 0),
-        (vec2(5215.0, 3205.0), 0),
-        (vec2(5265.0, 3235.0), 0),
+    spawns.hippies = vec![vec2(5175.0, 3190.0), vec2(5215.0, 3205.0), vec2(5265.0, 3235.0)];
+
+    spawns
+}
+
+fn debussy_bus_spawns() -> RegionSpawns {
+    let mut spawns = RegionSpawns::default();
+
+    spawns.scenery.extend([
+        ScenerySpawn::campfire(vec2(4860.0, 3050.0), 1.0),
+        ScenerySpawn::campfire(vec2(4935.0, 3055.0), 1.0),
+        ScenerySpawn::chair(vec2(4880.0, 2990.0), 0.3),
+        ScenerySpawn::chair(vec2(4825.0, 3000.0), -0.4),
+        ScenerySpawn::chair(vec2(4910.0, 3005.0), 0.5),
+        ScenerySpawn::tent(vec2(4870.0, 3080.0), 0),
+        ScenerySpawn::tent(vec2(4895.0, 3020.0), 1),
+        ScenerySpawn::tent(vec2(4925.0, 2965.0), 2),
+        ScenerySpawn::tent(vec2(4950.0, 3060.0), 3),
+    ]);
+
+    spawns.flags = vec![
+        vec2(4840.0, 3040.0),
+        vec2(4860.0, 3050.0),
+        vec2(4890.0, 2960.0),
+        vec2(4920.0, 3040.0),
+        vec2(4940.0, 3070.0),
     ];
+
+    spawns.hippies = vec![vec2(4860.0, 3050.0), vec2(4895.0, 3020.0), vec2(4935.0, 3055.0)];
 
     spawns
 }
@@ -190,5 +232,39 @@ mod tests {
         assert!(tents >= 3);
         assert!(!georgia.spawns.flags.is_empty());
         assert!(!georgia.spawns.hippies.is_empty());
+    }
+
+    #[test]
+    fn debussy_bus_has_expected_spawns() {
+        let regions = region_configs();
+        let bus = regions
+            .iter()
+            .find(|region| region.name == DEBUSSY_BUS_NAME)
+            .expect("DeBussy Bus Station region");
+
+        let campfires = bus
+            .spawns
+            .scenery
+            .iter()
+            .filter(|spawn| spawn.kind == crate::scenery::SceneryKind::Campfire)
+            .count();
+        let chairs = bus
+            .spawns
+            .scenery
+            .iter()
+            .filter(|spawn| spawn.kind == crate::scenery::SceneryKind::Chair)
+            .count();
+        let tents = bus
+            .spawns
+            .scenery
+            .iter()
+            .filter(|spawn| spawn.kind == crate::scenery::SceneryKind::Tent)
+            .count();
+
+        assert!(campfires >= 2);
+        assert!(chairs >= 2);
+        assert!(tents >= 3);
+        assert!(!bus.spawns.flags.is_empty());
+        assert!(!bus.spawns.hippies.is_empty());
     }
 }
