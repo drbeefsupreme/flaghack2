@@ -10,58 +10,9 @@ mod scenery;
 mod ley_lines;
 mod player;
 mod map;
+mod constants;
 
-const SCREEN_W: i32 = 960;
-const SCREEN_H: i32 = 540;
-const ACCENT: Color = Color::new(1.0, 0.9, 0.0, 1.0);
-const HUD_HEIGHT: f32 = 48.0;
-const FLAG_INTERACT_RADIUS: f32 = 48.0 * scale::MODEL_SCALE;
-const FLAG_POLE_HEIGHT: f32 = 36.0 * scale::MODEL_SCALE;
-const FLAG_POLE_WIDTH: f32 = 3.0 * scale::MODEL_SCALE;
-const FLAG_CLOTH_SIZE: Vec2 =
-    Vec2::new(22.0 * scale::MODEL_SCALE, 14.0 * scale::MODEL_SCALE);
-const FLAG_PLACE_OFFSET: Vec2 =
-    Vec2::new(28.0 * scale::MODEL_SCALE, 0.0);
-const FLAG_COUNT_START: usize = 10;
-const STARTING_FLAG_INVENTORY: u32 = 10;
-const LEY_MAX_DISTANCE: f32 = 150.0;
-const LEY_COLOR_PURPLE: Color = Color::new(0.55, 0.25, 0.95, 1.0);
-const LEY_COLOR_PINK: Color = Color::new(1.0, 0.35, 0.75, 1.0);
-const LEY_COLOR_CYCLE_SPEED: f32 = 0.9;
-const PENTAGRAM_COLOR_RED: Color = Color::new(1.0, 0.15, 0.05, 1.0);
-const PENTAGRAM_COLOR_ORANGE: Color = Color::new(1.0, 0.55, 0.0, 1.0);
-const PENTAGRAM_COLOR_CYCLE_SPEED: f32 = 1.2;
-const LEY_SPARKLE_SPEED: f32 = 3.5;
-const LEY_SPARKLE_STRENGTH: f32 = 0.35;
-const LEY_SPARKLE_SPATIAL: f32 = 0.02;
-const LEY_MIN_ALPHA: f32 = 0.05;
-const PENTAGRAM_MIN_ALPHA: f32 = 0.12;
-const PENTAGRAM_CENTER_RADIUS: f32 = 32.0 * scale::MODEL_SCALE;
-const PENTAGRAM_SPARKLE_SPAWN_RATE: f32 = 60.0;
-const PENTAGRAM_SPARKLE_MIN_ALPHA: f32 = 0.5;
-const PENTAGRAM_SPARKLE_MAX_ALPHA: f32 = 0.95;
-const PENTAGRAM_SPARKLE_MIN_SPEED: f32 = 40.0 * scale::MODEL_SCALE;
-const PENTAGRAM_SPARKLE_MAX_SPEED: f32 = 160.0 * scale::MODEL_SCALE;
-const PENTAGRAM_SPARKLE_MIN_RADIUS: f32 = 2.0 * scale::MODEL_SCALE;
-const PENTAGRAM_SPARKLE_MIN_MAX_RADIUS: f32 = 60.0 * scale::MODEL_SCALE;
-const PENTAGRAM_SPARKLE_MAX_RADIUS_FACTOR: f32 = 0.9;
-const PENTAGRAM_SPARKLE_HUE_SPEED: f32 = 0.35;
-const CAMERA_ZOOM_MIN: f32 = camera::DEFAULT_ZOOM * 0.25;
-const CAMERA_ZOOM_MAX: f32 = camera::DEFAULT_ZOOM * 2.0;
-const CAMERA_ZOOM_STEP: f32 = 0.1;
-const MAP_TILE_DIR: &str = "assets/map/tiles";
-const MAP_TRAVEL_MINUTES: f32 = 10.0;
-const SPEED_MULTIPLIER: f32 = 4.0;
-const MAP_REGION_COLOR: Color = Color::new(0.1, 0.6, 0.2, 1.0);
-const PLAYER_SPAWN_POS: Vec2 = Vec2::new(5015.0, 3292.0);
-const T3MPCAMP_NAME: &str = "t3mpcamp";
-const T3MPCAMP_VERTICES: [Vec2; 5] = [
-    Vec2::new(4858.0, 3168.0),
-    Vec2::new(5042.0, 3107.0),
-    Vec2::new(5123.0, 3345.0),
-    Vec2::new(5054.0, 3367.0),
-    Vec2::new(4911.0, 3322.0),
-];
+use constants::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scene {
@@ -89,6 +40,8 @@ struct Game {
     pentagram_sparkles: Vec<PentagramSparkle>,
     sparkle_spawn_accum: f32,
     sparkle_spawn_counter: u32,
+    t3mpcamp_inside: bool,
+    t3mpcamp_notice_timer: f32,
     map: map::TileMap,
     map_regions: Vec<map::MapRegion>,
     camera: camera::CameraState,
@@ -139,6 +92,8 @@ impl Game {
             pentagram_sparkles: Vec::new(),
             sparkle_spawn_accum: 0.0,
             sparkle_spawn_counter: 0,
+            t3mpcamp_inside: false,
+            t3mpcamp_notice_timer: -1.0,
             map,
             map_regions,
             camera: camera::CameraState::new(),
@@ -257,6 +212,10 @@ fn render_dungeon(game: &mut Game) {
 
     let time = get_time() as f32;
     let dt = get_frame_time();
+    let player_center = game.player.pos
+        + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
+    update_t3mpcamp_notice(game, player_center, dt);
+
     let camera = build_camera(game);
     let view_rect = camera_view_rect(game, camera.target);
     set_camera(&camera);
@@ -272,8 +231,6 @@ fn render_dungeon(game: &mut Game) {
     }
 
     player::draw_player(game.player.pos, ACCENT, game.player.facing);
-    let player_center = game.player.pos
-        + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
     update_pentagram_sparkles(
         &mut game.pentagram_sparkles,
         &mut game.sparkle_spawn_accum,
@@ -286,6 +243,7 @@ fn render_dungeon(game: &mut Game) {
     );
 
     set_default_camera();
+    draw_t3mpcamp_notice(game);
     draw_centered("FLAGHACK2", 60.0, 64.0, ACCENT);
     draw_centered("WASD to move", 110.0, 20.0, ACCENT);
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
@@ -440,6 +398,57 @@ fn player_in_pentagram(pos: Vec2, centers: &[Vec2]) -> bool {
     centers
         .iter()
         .any(|center| center.distance(pos) <= PENTAGRAM_CENTER_RADIUS)
+}
+
+fn update_t3mpcamp_notice(game: &mut Game, player_center: Vec2, dt: f32) {
+    let in_region = game
+        .map_regions
+        .iter()
+        .filter(|region| region.name == T3MPCAMP_NAME)
+        .any(|region| region.contains_point(player_center));
+
+    if in_region && !game.t3mpcamp_inside {
+        game.t3mpcamp_notice_timer = 0.0;
+    }
+
+    game.t3mpcamp_inside = in_region;
+
+    if game.t3mpcamp_notice_timer >= 0.0 {
+        game.t3mpcamp_notice_timer += dt;
+        if game.t3mpcamp_notice_timer > T3MPCAMP_NOTICE_DURATION {
+            game.t3mpcamp_notice_timer = -1.0;
+        }
+    }
+}
+
+fn draw_t3mpcamp_notice(game: &Game) {
+    if game.t3mpcamp_notice_timer < 0.0 {
+        return;
+    }
+    let alpha = t3mpcamp_notice_alpha(game.t3mpcamp_notice_timer);
+    if alpha <= 0.0 {
+        return;
+    }
+    let mut color = ACCENT;
+    color.a = alpha;
+    draw_centered("t3mpcamp.com", screen_height() * 0.5, T3MPCAMP_NOTICE_SIZE, color);
+}
+
+fn t3mpcamp_notice_alpha(elapsed: f32) -> f32 {
+    if elapsed < 0.0 || elapsed > T3MPCAMP_NOTICE_DURATION {
+        return 0.0;
+    }
+
+    if elapsed < T3MPCAMP_NOTICE_FADE {
+        return (elapsed / T3MPCAMP_NOTICE_FADE).clamp(0.0, 1.0);
+    }
+
+    if elapsed > T3MPCAMP_NOTICE_DURATION - T3MPCAMP_NOTICE_FADE {
+        let remaining = T3MPCAMP_NOTICE_DURATION - elapsed;
+        return (remaining / T3MPCAMP_NOTICE_FADE).clamp(0.0, 1.0);
+    }
+
+    1.0
 }
 
 fn update_pentagram_sparkles(
@@ -734,5 +743,15 @@ mod tests {
         let later = sparkle_color(&sparkle, 0.8, radius_later);
         let delta = (now.r - later.r).abs() + (now.g - later.g).abs() + (now.b - later.b).abs();
         assert!(delta > 1e-3);
+    }
+
+    #[test]
+    fn t3mpcamp_notice_alpha_fades_in_and_out() {
+        assert!(t3mpcamp_notice_alpha(0.0) <= 1e-6);
+        assert!((t3mpcamp_notice_alpha(0.25) - 0.5).abs() < 1e-4);
+        assert!((t3mpcamp_notice_alpha(0.5) - 1.0).abs() < 1e-6);
+        assert!((t3mpcamp_notice_alpha(3.5) - 1.0).abs() < 1e-6);
+        assert!((t3mpcamp_notice_alpha(3.75) - 0.5).abs() < 1e-4);
+        assert!(t3mpcamp_notice_alpha(4.0) <= 1e-6);
     }
 }

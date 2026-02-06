@@ -17,7 +17,6 @@ pub struct TileMap {
 #[derive(Debug)]
 pub struct MapRegion {
     pub name: &'static str,
-    vertices: Vec<Vec2>,
     triangles: Vec<[Vec2; 3]>,
     color: Color,
 }
@@ -27,15 +26,15 @@ impl MapRegion {
         let triangles = triangulate_polygon(&vertices);
         Self {
             name,
-            vertices,
             triangles,
             color,
         }
     }
 
-    pub fn set_vertices(&mut self, vertices: Vec<Vec2>) {
-        self.vertices = vertices;
-        self.triangles = triangulate_polygon(&self.vertices);
+    pub fn contains_point(&self, point: Vec2) -> bool {
+        self.triangles
+            .iter()
+            .any(|tri| point_in_triangle(point, tri[0], tri[1], tri[2]))
     }
 
     pub fn draw(&self) {
@@ -337,6 +336,17 @@ mod tests {
         assert_eq!(parse_tile_filename("tile_x_5.png"), None);
         assert_eq!(parse_tile_filename("tile_1.png"), None);
         assert_eq!(parse_tile_filename("map_1_2.png"), None);
+    }
+
+    #[test]
+    fn map_region_contains_point_inside_triangle() {
+        let region = MapRegion::new(
+            "test",
+            vec![vec2(0.0, 0.0), vec2(10.0, 0.0), vec2(0.0, 10.0)],
+            WHITE,
+        );
+        assert!(region.contains_point(vec2(2.0, 2.0)));
+        assert!(!region.contains_point(vec2(9.0, 9.0)));
     }
 
     #[test]
