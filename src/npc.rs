@@ -129,6 +129,7 @@ pub fn update_hippies(
     player_speed: f32,
 ) -> bool {
     let mut picked_any = false;
+    let player_has_flags = flag_state.player_inventory() > 0;
     let mut desired_positions = Vec::with_capacity(hippies.len());
     let mut inside_camps = Vec::with_capacity(hippies.len());
     let mut angry_flags = Vec::with_capacity(hippies.len());
@@ -146,7 +147,7 @@ pub fn update_hippies(
             );
         }
 
-        update_hippie_anger(hippie, player_pos, dt);
+        update_hippie_anger(hippie, player_pos, player_has_flags, dt);
         update_hippie_flee(hippie, dt);
         let angry = hippie.angry;
 
@@ -431,8 +432,15 @@ fn steal_from_player(
     }
 }
 
-fn update_hippie_anger(hippie: &mut Hippie, player_pos: Vec2, dt: f32) {
+fn update_hippie_anger(hippie: &mut Hippie, player_pos: Vec2, player_has_flags: bool, dt: f32) {
     if !hippie.angry {
+        return;
+    }
+
+    if !player_has_flags {
+        hippie.angry = false;
+        hippie.anger_timer = 0.0;
+        hippie.anger_delay = 0.0;
         return;
     }
 
@@ -878,7 +886,7 @@ mod tests {
         hippies[0].anger_delay = 0.0;
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
-        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let mut flag_state = FlagState::new(Vec::new(), 1, 1);
         let camps = vec![square.clone()];
         update_hippies(
             &mut hippies,
@@ -906,6 +914,34 @@ mod tests {
         hippies[0].anger_delay = 0.0;
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
+        let mut flag_state = FlagState::new(Vec::new(), 1, 1);
+        let camps = vec![square.clone()];
+        update_hippies(
+            &mut hippies,
+            0.1,
+            &camps,
+            &mut flag_state,
+            vec2(12.0, 12.0),
+            100.0,
+        );
+        assert!(hippies[0].angry);
+    }
+
+    #[test]
+    fn angry_stops_when_player_has_no_flags() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 0)], 0, &square);
+        hippies[0].angry = true;
+        hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
+        hippies[0].flee_timer = 0.0;
+        hippies[0].anger_delay = 0.0;
+        hippies[0].drop_check_timer = 0.0;
+        hippies[0].ignore_flags_timer = 0.0;
         let mut flag_state = FlagState::new(Vec::new(), 0, 0);
         let camps = vec![square.clone()];
         update_hippies(
@@ -916,7 +952,9 @@ mod tests {
             vec2(6.0, 6.0),
             100.0,
         );
-        assert!(hippies[0].angry);
+        assert!(!hippies[0].angry);
+        assert_eq!(hippies[0].anger_timer, 0.0);
+        assert_eq!(hippies[0].anger_delay, 0.0);
     }
 
     #[test]
@@ -1055,7 +1093,7 @@ mod tests {
         hippies[0].ignore_flags_timer = 0.0;
         hippies[0].target = vec2(150.0, 150.0);
 
-        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let mut flag_state = FlagState::new(Vec::new(), 1, 1);
         let player_pos = vec2(60.0, 50.0);
         let camps = vec![square.clone()];
         update_hippies(
@@ -1088,7 +1126,7 @@ mod tests {
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
 
-        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let mut flag_state = FlagState::new(Vec::new(), 1, 1);
         let camps = vec![camp.clone()];
         update_hippies(
             &mut hippies,
@@ -1119,7 +1157,7 @@ mod tests {
         hippies[0].ignore_flags_timer = 0.0;
         hippies[0].target = vec2(5.0, 5.0);
 
-        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let mut flag_state = FlagState::new(Vec::new(), 1, 1);
         let camps = vec![camp.clone()];
         let before = hippies[0].pos.distance(hippies[0].target);
         update_hippies(
@@ -1156,7 +1194,7 @@ mod tests {
             hippie.ignore_flags_timer = 0.0;
         }
 
-        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let mut flag_state = FlagState::new(Vec::new(), 1, 1);
         let camps = vec![camp.clone()];
         update_hippies(
             &mut hippies,
