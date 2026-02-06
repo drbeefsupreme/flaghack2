@@ -12,11 +12,12 @@ This repo is a Rust/Macroquad prototype of **Flaghack2**, a 2D roguelike with sm
 - `src/main.rs`
   - Game state machine: `Title` → `ClassSelect` → `Dungeon`
   - Input handling, camera logic, HUD
-  - World constants (flag sizes, zoom bounds, travel time)
+  - Now uses `src/constants.rs` for shared constants
 - `src/map.rs`
   - Loads tiled PNGs from `assets/map/tiles/`
   - Draws only visible tiles
   - Map dimensions + travel speed helpers
+  - `MapRegion::contains_point` for region entry checks
 - `src/camera.rs`
   - Camera state (zoom + pan + drag)
   - `DEFAULT_ZOOM = 4.0`
@@ -29,11 +30,18 @@ This repo is a Rust/Macroquad prototype of **Flaghack2**, a 2D roguelike with sm
   - Wiggle animation, wind support
 - `src/ley_lines.rs`
   - Ley line geometry between nearby flags
+  - Pentagram detection (5-flag ring) marks lines as `Pentagram`
 - `src/scenery.rs`
   - Procedural tents, chairs, campfires, trees, geodesic domes
   - Domes can contain decorations; first decoration is a rotating crystal
+  - Crystal dome fixed at `(4900, 3184)` and large campfire at `T3MPCAMP_CAMPFIRE_POS`
+- `src/npc.rs`
+  - Hippie NPCs (stick figure) with facing, wandering inside polygon region
+  - Spawned around the t3mpcamp campfire
 - `src/scale.rs`
   - `MODEL_SCALE = 0.25` + helper `scaled()`
+- `src/constants.rs`
+  - Centralized gameplay constants (flags, ley lines, pentagram FX, map, t3mpcamp)
 
 ## Assets
 - **Title screen mark:** `assets/png/signifiersmark.png`
@@ -53,9 +61,14 @@ convert /tmp/alchemy_map_padded.png -crop 1024x1024 +repage /tmp/map_tiles/tile_
 ## Gameplay Notes
 - Movement is smooth (not tile-based).
 - Flags can be placed near the player (LMB) and picked up (RMB).
+- Player starts with `10` flags in inventory.
 - Ley lines glow between nearby flags; brightness scales with distance.
+- Ley lines cap at `150` units; pentagram formations glow red/orange.
+- Pentagram detection has relaxed radius/angle tolerance for larger shapes.
+- Standing in a pentagram center spawns rainbow sparkles that persist until they fade out at max radius.
 - Camera pans with middle mouse drag; zooms with mouse wheel.
 - HUD includes flags count, speed, and player coordinates (bottom-right).
+- Entering the t3mpcamp region shows `t3mpcamp.com` centered for 4 seconds with 0.5s fade in/out.
 
 ## Testing
 We are doing TDD. Every feature gets at least one unit test.
@@ -74,3 +87,11 @@ cargo test --release
 - This map is temporary (guide layer); eventually we’ll overlay a custom map.
 - Domes will support multiple decoration types.
 - Ley line geometry will become a core gameplay system.
+
+## Recent Additions (Session Summary)
+- `src/constants.rs` created; constants removed from `src/main.rs`.
+- Ley lines now shimmer purple/pink normally, shift to red/orange for pentagrams.
+- Pentagram centers tracked for sparkle effects.
+- Sparkle system is time-based spawn; particles travel outward, fade to 0 at max radius, and persist after leaving the pentagram.
+- t3mpcamp region detection drives a transient center-screen banner.
+- Hippie NPCs added with simple stick-figure model and bounded wandering.
