@@ -121,6 +121,13 @@ pub fn try_place_flag(
     true
 }
 
+pub fn make_flag(pos: Vec2) -> Flag {
+    Flag {
+        pos,
+        phase: phase_from_position(pos),
+    }
+}
+
 pub fn flag_parts(base: Vec2, pole_height: f32, pole_width: f32, cloth_size: Vec2) -> (Rect, Rect) {
     let pole = Rect::new(
         base.x - pole_width * 0.5,
@@ -258,6 +265,14 @@ mod tests {
 
         assert!(!placed);
         assert_eq!(flags.len(), 0);
+    }
+
+    #[test]
+    fn make_flag_sets_phase_from_position() {
+        let pos = Vec2::new(12.0, 8.0);
+        let flag = make_flag(pos);
+        let expected = (pos.x * 0.15 + pos.y * 0.07) % std::f32::consts::TAU;
+        assert!((flag.phase - expected).abs() < 1e-6);
     }
 
     #[test]

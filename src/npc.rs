@@ -16,12 +16,17 @@ const HIPPIE_HAND_RADIUS: f32 = 2.0 * scale::MODEL_SCALE;
 const HIPPIE_FLAG_CAPACITY: u8 = 2;
 const HIPPIE_FLAG_PICKUP_RADIUS: f32 = 20.0 * scale::MODEL_SCALE;
 const HIPPIE_FLAG_ANGLE: f32 = std::f32::consts::FRAC_PI_4;
+const HIPPIE_ANGER_COLOR_SPEED: f32 = 2.0;
 
 #[derive(Clone, Debug)]
 pub struct Hippie {
     pub pos: Vec2,
     pub facing: player::Facing,
     pub carried_flags: u8,
+    pub angry: bool,
+    pub anger_timer: f32,
+    pub steal_cooldown: f32,
+    pub flee_timer: f32,
     target: Vec2,
     speed: f32,
     rng_state: u32,
@@ -30,6 +35,9 @@ pub struct Hippie {
 pub fn try_steal_flag(hippies: &mut [Hippie], origin: Vec2, radius: f32) -> bool {
     if let Some(index) = nearest_hippie_with_flag(hippies, origin, radius) {
         hippies[index].carried_flags = hippies[index].carried_flags.saturating_sub(1);
+        hippies[index].angry = true;
+        hippies[index].anger_timer = constants::HIPPIE_ANGER_DURATION;
+        hippies[index].steal_cooldown = 0.0;
         return true;
     }
     false
@@ -46,6 +54,10 @@ pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie
                 pos,
                 facing: player::Facing::Down,
                 carried_flags: 0,
+                angry: false,
+                anger_timer: 0.0,
+                steal_cooldown: 0.0,
+                flee_timer: 0.0,
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
@@ -68,6 +80,10 @@ pub fn spawn_hippies_with_flags(
                 pos,
                 facing: player::Facing::Down,
                 carried_flags: carried.min(HIPPIE_FLAG_CAPACITY),
+                angry: false,
+                anger_timer: 0.0,
+                steal_cooldown: 0.0,
+                flee_timer: 0.0,
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
@@ -81,6 +97,9 @@ pub fn update_hippies(
     dt: f32,
     region_vertices: &[Vec2],
     flags: &mut Vec<flags::Flag>,
+    player_pos: Vec2,
+    player_inventory: &mut u32,
+    player_speed: f32,
 ) -> bool {
     let mut picked_any = false;
     for hippie in hippies {
@@ -88,16 +107,39 @@ pub fn update_hippies(
             picked_any |= hippie_pickup_flags(hippie, flags);
         }
 
-        if hippie.pos.distance(hippie.target) <= HIPPIE_TARGET_EPSILON {
+        update_hippie_anger(hippie, player_pos, dt);
+        update_hippie_flee(hippie, dt);
+        let angry = hippie.angry;
+
+        if angry {
+            steal_from_player(hippie, player_pos, player_inventory, flags, dt);
+        }
+
+        if !angry
+            && hippie.flee_timer <= 0.0
+            && hippie.pos.distance(hippie.target) <= HIPPIE_TARGET_EPSILON
+        {
             hippie.target = random_point_in_polygon(region_vertices, &mut hippie.rng_state);
         }
 
-        let to_target = hippie.target - hippie.pos;
+        let target = if angry {
+            player_pos
+        } else if hippie.flee_timer > 0.0 {
+            hippie.pos + flee_direction(hippie.pos, player_pos) * 80.0 * scale::MODEL_SCALE
+        } else {
+            hippie.target
+        };
+        let to_target = target - hippie.pos;
         if to_target.length_squared() > 0.0 {
             hippie.facing = player::facing_from_direction(to_target);
         }
 
-        let step = hippie.speed * dt;
+        let speed = if angry {
+            chase_speed(player_speed)
+        } else {
+            hippie.speed
+        };
+        let step = speed * dt;
         let next_pos = if to_target.length() <= step || step <= 0.0 {
             hippie.target
         } else {
@@ -106,7 +148,7 @@ pub fn update_hippies(
 
         if point_in_polygon(next_pos, region_vertices) {
             hippie.pos = next_pos;
-        } else {
+        } else if !angry && hippie.flee_timer <= 0.0 {
             hippie.target = random_point_in_polygon(region_vertices, &mut hippie.rng_state);
         }
     }
@@ -115,20 +157,33 @@ pub fn update_hippies(
 
 pub fn draw_hippies(hippies: &[Hippie]) {
     for hippie in hippies {
-        draw_hippie(hippie.pos, hippie.facing, hippie.carried_flags);
+        draw_hippie(hippie.pos, hippie.facing, hippie.carried_flags, hippie.angry);
     }
 }
 
-fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8) {
+fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8, angry: bool) {
     let head_center = vec2(pos.x, pos.y - HIPPIE_BODY_LENGTH * 0.5 - HIPPIE_HEAD_RADIUS);
     let body_top = vec2(pos.x, pos.y - HIPPIE_BODY_LENGTH * 0.5);
     let body_bottom = vec2(pos.x, pos.y + HIPPIE_BODY_LENGTH * 0.5);
 
-    let skin = Color::new(0.95, 0.86, 0.74, 1.0);
+    let skin = if angry {
+        angry_head_color(get_time() as f32)
+    } else {
+        Color::new(0.95, 0.86, 0.74, 1.0)
+    };
     let body = Color::new(0.35, 0.7, 0.45, 1.0);
     let limbs = Color::new(0.2, 0.2, 0.2, 1.0);
     let outline = Color::new(0.05, 0.05, 0.05, 1.0);
 
+    if angry {
+        let glow = angry_head_color(get_time() as f32);
+        draw_circle(
+            head_center.x,
+            head_center.y,
+            HIPPIE_HEAD_RADIUS * 1.8,
+            Color::new(glow.r, glow.g, glow.b, 0.6),
+        );
+    }
     draw_circle(head_center.x, head_center.y, HIPPIE_HEAD_RADIUS + 1.0, outline);
     draw_circle(head_center.x, head_center.y, HIPPIE_HEAD_RADIUS, skin);
 
@@ -272,6 +327,100 @@ fn hippie_pickup_flags(hippie: &mut Hippie, flags: &mut Vec<flags::Flag>) -> boo
     picked
 }
 
+fn steal_from_player(
+    hippie: &mut Hippie,
+    player_pos: Vec2,
+    player_inventory: &mut u32,
+    flags: &mut Vec<flags::Flag>,
+    dt: f32,
+) {
+    if hippie.steal_cooldown > 0.0 {
+        hippie.steal_cooldown = (hippie.steal_cooldown - dt).max(0.0);
+    }
+
+    if hippie.steal_cooldown > 0.0 {
+        return;
+    }
+
+    if hippie.pos.distance(player_pos) > constants::HIPPIE_STEAL_BACK_RADIUS {
+        return;
+    }
+
+    let stolen = if *player_inventory >= 2 {
+        2
+    } else if *player_inventory >= 1 {
+        1
+    } else {
+        0
+    };
+
+    if stolen > 0 {
+        *player_inventory -= stolen;
+        let mut remaining = stolen as u8;
+        while remaining > 0 {
+            if hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
+                hippie.carried_flags += 1;
+            } else {
+                flags.push(flags::make_flag(hippie.pos));
+            }
+            remaining -= 1;
+        }
+
+        hippie.steal_cooldown = constants::HIPPIE_STEAL_COOLDOWN;
+        hippie.angry = false;
+        hippie.anger_timer = 0.0;
+        hippie.flee_timer = constants::HIPPIE_FLEE_DURATION;
+    }
+}
+
+fn update_hippie_anger(hippie: &mut Hippie, player_pos: Vec2, dt: f32) {
+    if !hippie.angry {
+        return;
+    }
+
+    if hippie.anger_timer > 0.0 {
+        hippie.anger_timer = (hippie.anger_timer - dt).max(0.0);
+    }
+
+    if hippie.anger_timer <= 0.0 {
+        let close = hippie.pos.distance(player_pos) <= constants::HIPPIE_ANGER_RADIUS;
+        if !close {
+            hippie.angry = false;
+        }
+    }
+}
+
+fn update_hippie_flee(hippie: &mut Hippie, dt: f32) {
+    if hippie.flee_timer > 0.0 {
+        hippie.flee_timer = (hippie.flee_timer - dt).max(0.0);
+    }
+}
+
+fn flee_direction(hippie_pos: Vec2, player_pos: Vec2) -> Vec2 {
+    let dir = hippie_pos - player_pos;
+    if dir.length_squared() <= f32::EPSILON {
+        vec2(1.0, 0.0)
+    } else {
+        dir.normalize()
+    }
+}
+
+fn angry_head_color(time: f32) -> Color {
+    let t = 0.5 + 0.5 * (time * HIPPIE_ANGER_COLOR_SPEED).sin();
+    let red = Color::new(1.0, 0.1, 0.05, 1.0);
+    let orange = Color::new(1.0, 0.55, 0.0, 1.0);
+    Color::new(
+        red.r + (orange.r - red.r) * t,
+        red.g + (orange.g - red.g) * t,
+        red.b + (orange.b - red.b) * t,
+        1.0,
+    )
+}
+
+fn chase_speed(player_speed: f32) -> f32 {
+    player_speed * constants::HIPPIE_CHASE_SPEED_FACTOR
+}
+
 fn nearest_hippie_with_flag(
     hippies: &[Hippie],
     origin: Vec2,
@@ -398,7 +547,15 @@ mod tests {
         let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
         let mut flags = Vec::new();
         for _ in 0..60 {
-            update_hippies(&mut hippies, 0.1, &square, &mut flags);
+            update_hippies(
+                &mut hippies,
+                0.1,
+                &square,
+                &mut flags,
+                vec2(50.0, 50.0),
+                &mut 0,
+                100.0,
+            );
             assert!(point_in_polygon(hippies[0].pos, &square));
         }
     }
@@ -417,7 +574,16 @@ mod tests {
             flags::Flag { pos: vec2(9.0, 10.0), phase: 0.0 },
             flags::Flag { pos: vec2(12.0, 10.0), phase: 0.0 },
         ];
-        let picked = update_hippies(&mut hippies, 0.0, &square, &mut flags);
+        let mut inventory = 0;
+        let picked = update_hippies(
+            &mut hippies,
+            0.0,
+            &square,
+            &mut flags,
+            vec2(0.0, 0.0),
+            &mut inventory,
+            100.0,
+        );
         assert!(picked);
         assert_eq!(hippies[0].carried_flags, 2);
         assert_eq!(flags.len(), 1);
@@ -434,7 +600,16 @@ mod tests {
         let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
         hippies[0].carried_flags = HIPPIE_FLAG_CAPACITY;
         let mut flags = vec![flags::Flag { pos: vec2(10.0, 10.0), phase: 0.0 }];
-        let picked = update_hippies(&mut hippies, 0.0, &square, &mut flags);
+        let mut inventory = 0;
+        let picked = update_hippies(
+            &mut hippies,
+            0.0,
+            &square,
+            &mut flags,
+            vec2(0.0, 0.0),
+            &mut inventory,
+            100.0,
+        );
         assert!(!picked);
         assert_eq!(flags.len(), 1);
     }
@@ -476,6 +651,10 @@ mod tests {
                 pos: vec2(0.0, 0.0),
                 facing: player::Facing::Down,
                 carried_flags: 1,
+                angry: false,
+                anger_timer: 0.0,
+                steal_cooldown: 0.0,
+                flee_timer: 0.0,
                 target: vec2(0.0, 0.0),
                 speed: HIPPIE_SPEED,
                 rng_state: 1,
@@ -484,6 +663,10 @@ mod tests {
                 pos: vec2(3.0, 0.0),
                 facing: player::Facing::Down,
                 carried_flags: 2,
+                angry: false,
+                anger_timer: 0.0,
+                steal_cooldown: 0.0,
+                flee_timer: 0.0,
                 target: vec2(0.0, 0.0),
                 speed: HIPPIE_SPEED,
                 rng_state: 2,
@@ -494,6 +677,8 @@ mod tests {
         assert!(stolen);
         assert_eq!(hippies[1].carried_flags, 1);
         assert_eq!(hippies[0].carried_flags, 1);
+        assert!(hippies[1].angry);
+        assert!((hippies[1].anger_timer - constants::HIPPIE_ANGER_DURATION).abs() < 1e-6);
     }
 
     #[test]
@@ -502,6 +687,10 @@ mod tests {
             pos: vec2(0.0, 0.0),
             facing: player::Facing::Down,
             carried_flags: 0,
+            angry: false,
+            anger_timer: 0.0,
+            steal_cooldown: 0.0,
+            flee_timer: 0.0,
             target: vec2(0.0, 0.0),
             speed: HIPPIE_SPEED,
             rng_state: 1,
@@ -509,5 +698,172 @@ mod tests {
 
         let stolen = try_steal_flag(&mut hippies, vec2(0.0, 0.0), 4.0);
         assert!(!stolen);
+    }
+
+    #[test]
+    fn anger_clears_when_timer_elapsed_and_far() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], &square);
+        hippies[0].angry = true;
+        hippies[0].anger_timer = 0.0;
+        hippies[0].flee_timer = 0.0;
+        let mut flags = Vec::new();
+        update_hippies(
+            &mut hippies,
+            0.1,
+            &square,
+            &mut flags,
+            vec2(100.0, 100.0),
+            &mut 0,
+            100.0,
+        );
+        assert!(!hippies[0].angry);
+    }
+
+    #[test]
+    fn anger_persists_while_close() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], &square);
+        hippies[0].angry = true;
+        hippies[0].anger_timer = 0.0;
+        hippies[0].flee_timer = 0.0;
+        let mut flags = Vec::new();
+        update_hippies(
+            &mut hippies,
+            0.1,
+            &square,
+            &mut flags,
+            vec2(6.0, 6.0),
+            &mut 0,
+            100.0,
+        );
+        assert!(hippies[0].angry);
+    }
+
+    #[test]
+    fn angry_color_cycles_over_time() {
+        let a = angry_head_color(0.0);
+        let b = angry_head_color(0.5);
+        let delta = (a.g - b.g).abs() + (a.b - b.b).abs();
+        assert!(delta > 1e-3);
+    }
+
+    #[test]
+    fn hippie_steals_from_player_when_close_and_angry() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], &square);
+        hippies[0].angry = true;
+        hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
+        hippies[0].flee_timer = 0.0;
+        let mut flags = Vec::new();
+        let mut inventory = 3;
+        let total_before =
+            inventory + flags.len() as u32 + hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>();
+        update_hippies(
+            &mut hippies,
+            0.0,
+            &square,
+            &mut flags,
+            vec2(5.0, 5.0),
+            &mut inventory,
+            100.0,
+        );
+        assert_eq!(inventory, 1);
+        assert_eq!(hippies[0].carried_flags, 2);
+        let total_after =
+            inventory + flags.len() as u32 + hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>();
+        assert_eq!(total_before, total_after);
+        assert!(hippies[0].steal_cooldown > 0.0);
+        assert!(!hippies[0].angry);
+        assert!((hippies[0].flee_timer - constants::HIPPIE_FLEE_DURATION).abs() < 1e-6);
+    }
+
+    #[test]
+    fn hippie_steal_drops_excess_when_full() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 2)], &square);
+        hippies[0].angry = true;
+        hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
+        let mut flags = Vec::new();
+        let mut inventory = 2;
+        let total_before =
+            inventory + flags.len() as u32 + hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>();
+        update_hippies(
+            &mut hippies,
+            0.0,
+            &square,
+            &mut flags,
+            vec2(5.0, 5.0),
+            &mut inventory,
+            100.0,
+        );
+        assert_eq!(inventory, 0);
+        assert_eq!(hippies[0].carried_flags, 2);
+        assert_eq!(flags.len(), 2);
+        let total_after =
+            inventory + flags.len() as u32 + hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>();
+        assert_eq!(total_before, total_after);
+    }
+
+    #[test]
+    fn hippie_steal_respects_cooldown() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], &square);
+        hippies[0].angry = true;
+        hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
+        hippies[0].flee_timer = 0.0;
+        let mut flags = Vec::new();
+        let mut inventory = 2;
+        update_hippies(
+            &mut hippies,
+            0.0,
+            &square,
+            &mut flags,
+            vec2(5.0, 5.0),
+            &mut inventory,
+            100.0,
+        );
+        let after_first = inventory;
+        update_hippies(
+            &mut hippies,
+            0.0,
+            &square,
+            &mut flags,
+            vec2(5.0, 5.0),
+            &mut inventory,
+            100.0,
+        );
+        assert_eq!(inventory, after_first);
+    }
+
+    #[test]
+    fn chase_speed_uses_player_speed_factor() {
+        let speed = chase_speed(100.0);
+        assert!((speed - 100.0 * constants::HIPPIE_CHASE_SPEED_FACTOR).abs() < 1e-6);
     }
 }

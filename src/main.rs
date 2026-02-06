@@ -44,6 +44,7 @@ struct Game {
     t3mpcamp_inside: bool,
     t3mpcamp_notice_timer: f32,
     hippies: Vec<npc::Hippie>,
+    total_flags: u32,
     map: map::TileMap,
     map_regions: Vec<map::MapRegion>,
     camera: camera::CameraState,
@@ -77,6 +78,8 @@ impl Game {
             field_rect,
             40.0 * scale::MODEL_SCALE,
         );
+        let total_flags =
+            flags.len() as u32 + STARTING_FLAG_INVENTORY + total_hippie_flags(&hippies);
         let ley_lines = ley_lines::compute_ley_lines(&flags, LEY_MAX_DISTANCE);
         let pentagram_centers = ley_lines::pentagram_centers(&flags, LEY_MAX_DISTANCE);
         let player_speed = map::adjusted_travel_speed(
@@ -104,6 +107,7 @@ impl Game {
             t3mpcamp_inside: false,
             t3mpcamp_notice_timer: -1.0,
             hippies,
+            total_flags,
             map,
             map_regions,
             camera: camera::CameraState::new(),
@@ -230,6 +234,9 @@ fn render_dungeon(game: &mut Game) {
         dt,
         &T3MPCAMP_VERTICES,
         &mut game.flags,
+        player_center,
+        &mut game.flag_inventory,
+        game.player_speed,
     );
     if hippies_picked {
         game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
@@ -270,6 +277,8 @@ fn render_dungeon(game: &mut Game) {
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
     draw_centered("Q to quit", 160.0, 20.0, ACCENT);
     draw_hud(game.flag_inventory, game.player_speed, game.player.pos);
+
+    debug_assert_eq!(game.total_flags, current_total_flags(game));
 
     if is_key_pressed(KeyCode::Escape) {
         game.scene = Scene::ClassSelect;
@@ -322,9 +331,7 @@ fn handle_flag_interactions(game: &mut Game) {
             game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
             game.pentagram_centers = ley_lines::pentagram_centers(&game.flags, LEY_MAX_DISTANCE);
         }
-    }
 
-    if is_key_pressed(KeyCode::Space) {
         let player_center = game.player.pos
             + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
         if npc::try_steal_flag(&mut game.hippies, player_center, HIPPIE_STEAL_RADIUS) {
@@ -427,6 +434,14 @@ fn player_in_pentagram(pos: Vec2, centers: &[Vec2]) -> bool {
     centers
         .iter()
         .any(|center| center.distance(pos) <= PENTAGRAM_CENTER_RADIUS)
+}
+
+fn current_total_flags(game: &Game) -> u32 {
+    game.flags.len() as u32 + game.flag_inventory + total_hippie_flags(&game.hippies)
+}
+
+fn total_hippie_flags(hippies: &[npc::Hippie]) -> u32 {
+    hippies.iter().map(|h| h.carried_flags as u32).sum()
 }
 
 fn update_t3mpcamp_notice(game: &mut Game, player_center: Vec2, dt: f32) {
@@ -782,5 +797,19 @@ mod tests {
         assert!((t3mpcamp_notice_alpha(3.5) - 1.0).abs() < 1e-6);
         assert!((t3mpcamp_notice_alpha(3.75) - 0.5).abs() < 1e-4);
         assert!(t3mpcamp_notice_alpha(4.0) <= 1e-6);
+    }
+
+    #[test]
+    fn total_hippie_flags_sums_carried_flags() {
+        let region = [
+            vec2(0.0, 0.0),
+            vec2(10.0, 0.0),
+            vec2(0.0, 10.0),
+        ];
+        let hippies = npc::spawn_hippies_with_flags(
+            &[(vec2(1.0, 1.0), 1), (vec2(2.0, 2.0), 2)],
+            &region,
+        );
+        assert_eq!(total_hippie_flags(&hippies), 3);
     }
 }
