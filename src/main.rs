@@ -13,6 +13,7 @@ mod map;
 mod constants;
 mod npc;
 mod hud;
+mod geom;
 
 use constants::*;
 

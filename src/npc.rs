@@ -2,6 +2,7 @@ use macroquad::prelude::*;
 
 use crate::constants;
 use crate::flags;
+use crate::geom;
 use crate::player;
 use crate::scale;
 
@@ -158,7 +159,7 @@ pub fn update_hippies(
             hippie.pos + to_target.normalize() * step
         };
 
-        if point_in_polygon(next_pos, region_vertices) {
+        if geom::point_in_polygon(next_pos, region_vertices) {
             hippie.pos = next_pos;
         } else if !angry && hippie.flee_timer <= 0.0 {
             hippie.target = random_point_in_polygon(region_vertices, &mut hippie.rng_state);
@@ -478,52 +479,19 @@ fn nearest_hippie_with_flag(
     best
 }
 
-fn point_in_polygon(point: Vec2, vertices: &[Vec2]) -> bool {
-    if vertices.len() < 3 {
-        return false;
-    }
-    let mut inside = false;
-    let mut j = vertices.len() - 1;
-    for i in 0..vertices.len() {
-        let vi = vertices[i];
-        let vj = vertices[j];
-        let intersects = (vi.y > point.y) != (vj.y > point.y)
-            && point.x
-                < (vj.x - vi.x) * (point.y - vi.y) / (vj.y - vi.y + f32::EPSILON) + vi.x;
-        if intersects {
-            inside = !inside;
-        }
-        j = i;
-    }
-    inside
-}
-
 fn random_point_in_polygon(vertices: &[Vec2], rng_state: &mut u32) -> Vec2 {
-    if vertices.is_empty() {
+    let Some((min, max)) = geom::polygon_bounds(vertices) else {
         return Vec2::ZERO;
-    }
-    let (min, max) = polygon_bounds(vertices);
+    };
     for _ in 0..HIPPIE_BOUNDS_ATTEMPTS {
         let x = lerp(min.x, max.x, next_f32(rng_state));
         let y = lerp(min.y, max.y, next_f32(rng_state));
         let candidate = vec2(x, y);
-        if point_in_polygon(candidate, vertices) {
+        if geom::point_in_polygon(candidate, vertices) {
             return candidate;
         }
     }
     vertices[0]
-}
-
-fn polygon_bounds(vertices: &[Vec2]) -> (Vec2, Vec2) {
-    let mut min = vertices[0];
-    let mut max = vertices[0];
-    for v in &vertices[1..] {
-        min.x = min.x.min(v.x);
-        min.y = min.y.min(v.y);
-        max.x = max.x.max(v.x);
-        max.y = max.y.max(v.y);
-    }
-    (min, max)
 }
 
 fn next_f32(state: &mut u32) -> f32 {
@@ -554,8 +522,8 @@ mod tests {
             vec2(10.0, 10.0),
             vec2(0.0, 10.0),
         ];
-        assert!(point_in_polygon(vec2(5.0, 5.0), &square));
-        assert!(!point_in_polygon(vec2(12.0, 5.0), &square));
+        assert!(geom::point_in_polygon(vec2(5.0, 5.0), &square));
+        assert!(!geom::point_in_polygon(vec2(12.0, 5.0), &square));
     }
 
     #[test]
@@ -569,7 +537,7 @@ mod tests {
         let mut rng = 1u32;
         for _ in 0..32 {
             let p = random_point_in_polygon(&square, &mut rng);
-            assert!(point_in_polygon(p, &square));
+            assert!(geom::point_in_polygon(p, &square));
         }
     }
 
@@ -593,7 +561,7 @@ mod tests {
                 &mut 0,
                 100.0,
             );
-            assert!(point_in_polygon(hippies[0].pos, &square));
+            assert!(geom::point_in_polygon(hippies[0].pos, &square));
         }
     }
 
