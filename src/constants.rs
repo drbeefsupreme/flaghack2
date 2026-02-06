@@ -41,6 +41,7 @@ pub const T3MPCAMP_NOTICE_DURATION: f32 = 4.0;
 pub const T3MPCAMP_NOTICE_FADE: f32 = 0.5;
 pub const T3MPCAMP_NOTICE_SIZE: f32 = 54.0;
 pub const T3MPCAMP_CAMPFIRE_POS: Vec2 = Vec2::new(4982.0, 3233.0);
+pub const HIPPIE_STEAL_RADIUS: f32 = 36.0 * scale::MODEL_SCALE;
 pub const CAMERA_ZOOM_MIN: f32 = camera::DEFAULT_ZOOM * 0.25;
 pub const CAMERA_ZOOM_MAX: f32 = camera::DEFAULT_ZOOM * 2.0;
 pub const CAMERA_ZOOM_STEP: f32 = 0.1;

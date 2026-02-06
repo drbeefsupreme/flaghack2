@@ -323,6 +323,14 @@ fn handle_flag_interactions(game: &mut Game) {
             game.pentagram_centers = ley_lines::pentagram_centers(&game.flags, LEY_MAX_DISTANCE);
         }
     }
+
+    if is_key_pressed(KeyCode::Space) {
+        let player_center = game.player.pos
+            + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
+        if npc::try_steal_flag(&mut game.hippies, player_center, HIPPIE_STEAL_RADIUS) {
+            game.flag_inventory = game.flag_inventory.saturating_add(1);
+        }
+    }
 }
 
 fn draw_flag(flag: &flags::Flag, time: f32, wind: flags::Wind) {

@@ -27,6 +27,14 @@ pub struct Hippie {
     rng_state: u32,
 }
 
+pub fn try_steal_flag(hippies: &mut [Hippie], origin: Vec2, radius: f32) -> bool {
+    if let Some(index) = nearest_hippie_with_flag(hippies, origin, radius) {
+        hippies[index].carried_flags = hippies[index].carried_flags.saturating_sub(1);
+        return true;
+    }
+    false
+}
+
 pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie> {
     positions
         .iter()
@@ -264,6 +272,26 @@ fn hippie_pickup_flags(hippie: &mut Hippie, flags: &mut Vec<flags::Flag>) -> boo
     picked
 }
 
+fn nearest_hippie_with_flag(
+    hippies: &[Hippie],
+    origin: Vec2,
+    radius: f32,
+) -> Option<usize> {
+    let mut best = None;
+    let mut best_d2 = radius * radius;
+    for (i, hippie) in hippies.iter().enumerate() {
+        if hippie.carried_flags == 0 {
+            continue;
+        }
+        let d2 = hippie.pos.distance_squared(origin);
+        if d2 <= best_d2 {
+            best = Some(i);
+            best_d2 = d2;
+        }
+    }
+    best
+}
+
 fn point_in_polygon(point: Vec2, vertices: &[Vec2]) -> bool {
     if vertices.len() < 3 {
         return false;
@@ -439,5 +467,47 @@ mod tests {
         let (rotation, _) = hippie_flag_orientation(player::Facing::Right);
         let expected = HIPPIE_FLAG_ANGLE - std::f32::consts::FRAC_PI_2;
         assert!((rotation - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn steal_flag_takes_from_nearest_hippie() {
+        let mut hippies = vec![
+            Hippie {
+                pos: vec2(0.0, 0.0),
+                facing: player::Facing::Down,
+                carried_flags: 1,
+                target: vec2(0.0, 0.0),
+                speed: HIPPIE_SPEED,
+                rng_state: 1,
+            },
+            Hippie {
+                pos: vec2(3.0, 0.0),
+                facing: player::Facing::Down,
+                carried_flags: 2,
+                target: vec2(0.0, 0.0),
+                speed: HIPPIE_SPEED,
+                rng_state: 2,
+            },
+        ];
+
+        let stolen = try_steal_flag(&mut hippies, vec2(2.5, 0.0), 4.0);
+        assert!(stolen);
+        assert_eq!(hippies[1].carried_flags, 1);
+        assert_eq!(hippies[0].carried_flags, 1);
+    }
+
+    #[test]
+    fn steal_flag_fails_without_flags() {
+        let mut hippies = vec![Hippie {
+            pos: vec2(0.0, 0.0),
+            facing: player::Facing::Down,
+            carried_flags: 0,
+            target: vec2(0.0, 0.0),
+            speed: HIPPIE_SPEED,
+            rng_state: 1,
+        }];
+
+        let stolen = try_steal_flag(&mut hippies, vec2(0.0, 0.0), 4.0);
+        assert!(!stolen);
     }
 }
