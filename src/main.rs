@@ -23,8 +23,15 @@ const FLAG_CLOTH_SIZE: Vec2 =
 const FLAG_PLACE_OFFSET: Vec2 =
     Vec2::new(28.0 * scale::MODEL_SCALE, 0.0);
 const FLAG_COUNT_START: usize = 10;
-const LEY_MAX_DISTANCE: f32 = 220.0;
-const LEY_BASE_COLOR: Color = Color::new(0.55, 0.42, 0.9, 1.0);
+const STARTING_FLAG_INVENTORY: u32 = 10;
+const LEY_MAX_DISTANCE: f32 = 150.0;
+const LEY_COLOR_PURPLE: Color = Color::new(0.55, 0.25, 0.95, 1.0);
+const LEY_COLOR_PINK: Color = Color::new(1.0, 0.35, 0.75, 1.0);
+const LEY_COLOR_CYCLE_SPEED: f32 = 0.9;
+const LEY_SPARKLE_SPEED: f32 = 3.5;
+const LEY_SPARKLE_STRENGTH: f32 = 0.35;
+const LEY_SPARKLE_SPATIAL: f32 = 0.02;
+const LEY_MIN_ALPHA: f32 = 0.05;
 const CAMERA_ZOOM_MIN: f32 = camera::DEFAULT_ZOOM * 0.25;
 const CAMERA_ZOOM_MAX: f32 = camera::DEFAULT_ZOOM * 2.0;
 const CAMERA_ZOOM_STEP: f32 = 0.1;
@@ -105,7 +112,7 @@ impl Game {
             },
             class_name: "Vexillomancer",
             flags,
-            flag_inventory: 0,
+            flag_inventory: STARTING_FLAG_INVENTORY,
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
             scenery: scenery::spawn_scenery(field_rect),
             ley_lines,
@@ -235,7 +242,7 @@ fn render_dungeon(game: &mut Game) {
         region.draw();
     }
     scenery::draw_scenery(&game.scenery, time);
-    draw_ley_lines(&game.ley_lines);
+    draw_ley_lines(&game.ley_lines, time);
     for flag in &game.flags {
         draw_flag(flag, time, game.wind);
     }
@@ -243,7 +250,7 @@ fn render_dungeon(game: &mut Game) {
     player::draw_player(game.player.pos, ACCENT, game.player.facing);
 
     set_default_camera();
-    draw_centered("Dungeon", 60.0, 44.0, ACCENT);
+    draw_centered("FLAGHACK2", 60.0, 64.0, ACCENT);
     draw_centered("WASD to move", 110.0, 20.0, ACCENT);
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
     draw_centered("Q to quit", 160.0, 20.0, ACCENT);
@@ -333,17 +340,48 @@ fn draw_hud(flag_count: u32, speed: f32, player_pos: Vec2) {
     draw_text(&coords, x, y + 32.0, 20.0, ACCENT);
 }
 
-fn draw_ley_lines(lines: &[ley_lines::LeyLine]) {
+fn draw_ley_lines(lines: &[ley_lines::LeyLine], time: f32) {
+    let cycle = 0.5 + 0.5 * (time * LEY_COLOR_CYCLE_SPEED).sin();
     for line in lines {
-        let color = Color {
-            r: LEY_BASE_COLOR.r,
-            g: LEY_BASE_COLOR.g,
-            b: LEY_BASE_COLOR.b,
-            a: line.intensity.clamp(0.1, 1.0),
-        };
-        let width = scale::scaled(2.0 + 4.0 * line.intensity);
+        let sparkle_phase = (line.a.x + line.b.y) * LEY_SPARKLE_SPATIAL;
+        let sparkle = 0.5 + 0.5 * (time * LEY_SPARKLE_SPEED + sparkle_phase).sin();
+        let sparkle_mix = sparkle * LEY_SPARKLE_STRENGTH;
+
+        let base = lerp_color(LEY_COLOR_PURPLE, LEY_COLOR_PINK, cycle);
+        let mut color = lerp_color(base, Color::new(1.0, 0.85, 1.0, 1.0), sparkle_mix);
+
+        let saturation = 0.6 + 0.6 * line.intensity;
+        color = saturate_color(color, saturation);
+        let brightness = (0.7 + 0.5 * line.intensity).min(1.2);
+        color.r = (color.r * brightness).min(1.0);
+        color.g = (color.g * brightness).min(1.0);
+        color.b = (color.b * brightness).min(1.0);
+
+        let alpha = (LEY_MIN_ALPHA + (1.0 - LEY_MIN_ALPHA) * line.intensity).clamp(0.0, 1.0);
+        let alpha = (alpha * (0.85 + 0.15 * sparkle)).clamp(0.0, 1.0);
+        color.a = alpha;
+
+        let width = scale::scaled(1.0 + 3.0 * line.intensity);
         draw_line(line.a.x, line.a.y, line.b.x, line.b.y, width, color);
     }
+}
+
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    Color {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: a.a + (b.a - a.a) * t,
+    }
+}
+
+fn saturate_color(color: Color, amount: f32) -> Color {
+    let gray = (color.r + color.g + color.b) / 3.0;
+    let r = (gray + (color.r - gray) * amount).clamp(0.0, 1.0);
+    let g = (gray + (color.g - gray) * amount).clamp(0.0, 1.0);
+    let b = (gray + (color.b - gray) * amount).clamp(0.0, 1.0);
+    Color { r, g, b, a: color.a }
 }
 
 fn handle_camera(game: &mut Game) {
@@ -407,5 +445,26 @@ mod tests {
     fn format_player_coords_rounds_to_whole_numbers() {
         let text = format_player_coords(vec2(12.4, 13.6));
         assert_eq!(text, "X: 12  Y: 14");
+    }
+
+    #[test]
+    fn starting_flag_inventory_is_ten() {
+        assert_eq!(STARTING_FLAG_INVENTORY, 10);
+    }
+
+    #[test]
+    fn ley_line_max_distance_is_150() {
+        assert_eq!(LEY_MAX_DISTANCE, 150.0);
+    }
+
+    #[test]
+    fn lerp_color_midpoint_is_halfway() {
+        let a = Color::new(0.0, 0.2, 0.4, 0.6);
+        let b = Color::new(1.0, 0.6, 0.2, 1.0);
+        let mid = lerp_color(a, b, 0.5);
+        assert!((mid.r - 0.5).abs() < 1e-6);
+        assert!((mid.g - 0.4).abs() < 1e-6);
+        assert!((mid.b - 0.3).abs() < 1e-6);
+        assert!((mid.a - 0.8).abs() < 1e-6);
     }
 }

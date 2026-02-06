@@ -33,8 +33,13 @@ const BASE_W: f32 = 800.0;
 const BASE_H: f32 = 600.0;
 const DOME_COUNT: usize = 2;
 const DOME_PADDING: f32 = 120.0 * scale::MODEL_SCALE;
-pub const DOME_RADIUS: f32 = 100.0 * scale::MODEL_SCALE;
-pub const DOME_HEIGHT: f32 = 100.0 * scale::MODEL_SCALE;
+const DOME_SCALE: f32 = 1.5;
+const CRYSTAL_SCALE: f32 = 1.5;
+pub const DOME_RADIUS: f32 = 100.0 * scale::MODEL_SCALE * DOME_SCALE;
+pub const DOME_HEIGHT: f32 = 100.0 * scale::MODEL_SCALE * DOME_SCALE;
+const CRYSTAL_DOME_POS: Vec2 = Vec2::new(4900.0, 3184.0);
+const LARGE_CAMPFIRE_POS: Vec2 = Vec2::new(4982.0, 3233.0);
+const LARGE_CAMPFIRE_SCALE: f32 = 1.5;
 const T3MPCAMP_TENT_SPACING: f32 = 14.0;
 const T3MPCAMP_ROW1_START: Vec2 = Vec2::new(4926.0, 3300.0);
 const T3MPCAMP_ROW1_END: Vec2 = Vec2::new(5000.0, 3300.0);
@@ -109,6 +114,15 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
         });
     }
 
+    items.push(SceneryItem {
+        kind: SceneryKind::Campfire,
+        pos: LARGE_CAMPFIRE_POS,
+        scale: LARGE_CAMPFIRE_SCALE,
+        rotation: 0.0,
+        variant: 0,
+        decorations: Vec::new(),
+    });
+
     let crow_base_pos = vec2(5065.0, 3327.0);
     items.push(SceneryItem {
         kind: SceneryKind::CrowBase,
@@ -125,6 +139,15 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
         rotation: 0.0,
         variant: 0,
         decorations: Vec::new(),
+    });
+
+    items.push(SceneryItem {
+        kind: SceneryKind::Dome,
+        pos: CRYSTAL_DOME_POS,
+        scale: 1.0,
+        rotation: 0.0,
+        variant: 0,
+        decorations: vec![DomeDecoration::Crystal],
     });
 
     let trees = [
@@ -174,7 +197,7 @@ pub fn draw_scenery(items: &[SceneryItem], time: f32) {
             SceneryKind::Tree => draw_tree(item.pos, item.scale),
             SceneryKind::Tent => draw_tent(item.pos, item.variant),
             SceneryKind::Chair => draw_chair(item.pos, item.rotation),
-            SceneryKind::Campfire => draw_campfire(item.pos, time),
+            SceneryKind::Campfire => draw_campfire(item.pos, time, item.scale),
             SceneryKind::CrowBase => draw_crow_base(item.pos, time),
             SceneryKind::Crow => draw_crow(item.pos, time),
             SceneryKind::Dome => draw_geodesic_dome(item.pos, time, &item.decorations),
@@ -305,10 +328,10 @@ fn draw_chair(pos: Vec2, rotation: f32) {
     );
 }
 
-fn draw_campfire(pos: Vec2, time: f32) {
+fn draw_campfire(pos: Vec2, time: f32, scale: f32) {
     let stone_color = Color::new(0.33, 0.33, 0.33, 1.0);
     let log_color = Color::new(0.36, 0.25, 0.20, 1.0);
-    let s = scale::MODEL_SCALE;
+    let s = scale::MODEL_SCALE * scale;
 
     let stone_angles: [f32; 8] = [0.0, 0.8, 1.6, 2.4, 3.2, 4.0, 4.8, 5.6];
     for angle in stone_angles {
@@ -768,7 +791,7 @@ fn draw_geodesic_dome(center: Vec2, time: f32, decorations: &[DomeDecoration]) {
 fn draw_big_red_crystal(center: Vec2, time: f32) {
     let pulse = ((time * 1.1).sin() + 1.0) * 0.5;
     let glow_alpha = 0.18 + pulse * 0.12;
-    let s = scale::MODEL_SCALE;
+    let s = scale::MODEL_SCALE * CRYSTAL_SCALE;
 
     let tip_h = 22.0 * s;
     let body_h = 56.0 * s;
@@ -943,7 +966,7 @@ mod tests {
 
     #[test]
     fn spawn_scenery_has_expected_counts() {
-        let field = Rect::new(0.0, 0.0, 960.0, 480.0);
+        let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
         let items = spawn_scenery(field);
 
         let tents = items.iter().filter(|i| i.kind == SceneryKind::Tent).count();
@@ -964,23 +987,49 @@ mod tests {
 
         assert_eq!(tents, 5);
         assert_eq!(chairs, 5);
-        assert_eq!(campfires, 2);
+        assert_eq!(campfires, 3);
         assert_eq!(crow_bases, 1);
         assert_eq!(crows, 1);
         assert_eq!(trees, 5);
-        assert_eq!(domes, 2);
-        assert_eq!(domes_with_crystal, 1);
+        assert_eq!(domes, 3);
+        assert_eq!(domes_with_crystal, 2);
     }
 
     #[test]
     fn spawn_scenery_within_field() {
-        let field = Rect::new(0.0, 0.0, 960.0, 480.0);
+        let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
         let items = spawn_scenery(field);
 
         for item in items {
             assert!(item.pos.x >= field.x && item.pos.x <= field.x + field.w);
             assert!(item.pos.y >= field.y && item.pos.y <= field.y + field.h);
         }
+    }
+
+    #[test]
+    fn spawn_scenery_has_crystal_dome_at_target() {
+        let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
+        let items = spawn_scenery(field);
+
+        let dome = items.iter().find(|item| {
+            item.kind == SceneryKind::Dome && item.pos == CRYSTAL_DOME_POS
+        });
+
+        let dome = dome.expect("Expected crystal dome at target position");
+        assert!(dome.decorations.contains(&DomeDecoration::Crystal));
+    }
+
+    #[test]
+    fn spawn_scenery_has_large_campfire_at_target() {
+        let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
+        let items = spawn_scenery(field);
+
+        let campfire = items.iter().find(|item| {
+            item.kind == SceneryKind::Campfire && item.pos == LARGE_CAMPFIRE_POS
+        });
+
+        let campfire = campfire.expect("Expected large campfire at target position");
+        assert!((campfire.scale - LARGE_CAMPFIRE_SCALE).abs() < f32::EPSILON);
     }
 
     #[test]

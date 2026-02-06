@@ -24,7 +24,8 @@ pub fn compute_ley_lines(flags: &[Flag], max_distance: f32) -> Vec<LeyLine> {
             let d2 = a.distance_squared(b);
             if d2 <= max_d2 {
                 let d = d2.sqrt();
-                let intensity = 1.0 - (d / max_distance);
+                let t = 1.0 - (d / max_distance);
+                let intensity = (t * t).clamp(0.0, 1.0);
                 lines.push(LeyLine { a, b, intensity });
             }
         }
@@ -54,7 +55,8 @@ mod tests {
         ];
         let lines = compute_ley_lines(&flags, 50.0);
         assert_eq!(lines.len(), 1);
-        assert!((lines[0].intensity - (1.0 - 10.0 / 50.0)).abs() < 1e-6);
+        let expected = (1.0 - 10.0 / 50.0).powi(2);
+        assert!((lines[0].intensity - expected).abs() < 1e-6);
     }
 
     #[test]
