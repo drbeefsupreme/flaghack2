@@ -46,6 +46,7 @@ pub const HIPPIE_ANGER_DURATION: f32 = 15.0;
 pub const HIPPIE_ANGER_RADIUS: f32 = 80.0 * scale::MODEL_SCALE;
 pub const HIPPIE_STEAL_BACK_RADIUS: f32 = 18.0 * scale::MODEL_SCALE;
 pub const HIPPIE_STEAL_COOLDOWN: f32 = 1.5;
+pub const HIPPIE_ANGER_DELAY: f32 = 1.0;
 pub const HIPPIE_CHASE_SPEED_FACTOR: f32 = 0.66;
 pub const HIPPIE_FLEE_DURATION: f32 = 10.0;
 pub const CAMERA_ZOOM_MIN: f32 = camera::DEFAULT_ZOOM * 0.25;

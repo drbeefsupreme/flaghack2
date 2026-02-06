@@ -25,6 +25,7 @@ pub struct Hippie {
     pub carried_flags: u8,
     pub angry: bool,
     pub anger_timer: f32,
+    pub anger_delay: f32,
     pub steal_cooldown: f32,
     pub flee_timer: f32,
     target: Vec2,
@@ -37,6 +38,7 @@ pub fn try_steal_flag(hippies: &mut [Hippie], origin: Vec2, radius: f32) -> bool
         hippies[index].carried_flags = hippies[index].carried_flags.saturating_sub(1);
         hippies[index].angry = true;
         hippies[index].anger_timer = constants::HIPPIE_ANGER_DURATION;
+        hippies[index].anger_delay = constants::HIPPIE_ANGER_DELAY;
         hippies[index].steal_cooldown = 0.0;
         return true;
     }
@@ -56,6 +58,7 @@ pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie
                 carried_flags: 0,
                 angry: false,
                 anger_timer: 0.0,
+                anger_delay: 0.0,
                 steal_cooldown: 0.0,
                 flee_timer: 0.0,
                 target,
@@ -82,6 +85,7 @@ pub fn spawn_hippies_with_flags(
                 carried_flags: carried.min(HIPPIE_FLAG_CAPACITY),
                 angry: false,
                 anger_timer: 0.0,
+                anger_delay: 0.0,
                 steal_cooldown: 0.0,
                 flee_timer: 0.0,
                 target,
@@ -111,7 +115,7 @@ pub fn update_hippies(
         update_hippie_flee(hippie, dt);
         let angry = hippie.angry;
 
-        if angry {
+        if angry && hippie.anger_delay <= 0.0 {
             steal_from_player(hippie, player_pos, player_inventory, flags, dt);
         }
 
@@ -369,6 +373,7 @@ fn steal_from_player(
         hippie.steal_cooldown = constants::HIPPIE_STEAL_COOLDOWN;
         hippie.angry = false;
         hippie.anger_timer = 0.0;
+        hippie.anger_delay = 0.0;
         hippie.flee_timer = constants::HIPPIE_FLEE_DURATION;
     }
 }
@@ -376,6 +381,10 @@ fn steal_from_player(
 fn update_hippie_anger(hippie: &mut Hippie, player_pos: Vec2, dt: f32) {
     if !hippie.angry {
         return;
+    }
+
+    if hippie.anger_delay > 0.0 {
+        hippie.anger_delay = (hippie.anger_delay - dt).max(0.0);
     }
 
     if hippie.anger_timer > 0.0 {
@@ -653,6 +662,7 @@ mod tests {
                 carried_flags: 1,
                 angry: false,
                 anger_timer: 0.0,
+                anger_delay: 0.0,
                 steal_cooldown: 0.0,
                 flee_timer: 0.0,
                 target: vec2(0.0, 0.0),
@@ -665,6 +675,7 @@ mod tests {
                 carried_flags: 2,
                 angry: false,
                 anger_timer: 0.0,
+                anger_delay: 0.0,
                 steal_cooldown: 0.0,
                 flee_timer: 0.0,
                 target: vec2(0.0, 0.0),
@@ -689,6 +700,7 @@ mod tests {
             carried_flags: 0,
             angry: false,
             anger_timer: 0.0,
+            anger_delay: 0.0,
             steal_cooldown: 0.0,
             flee_timer: 0.0,
             target: vec2(0.0, 0.0),
@@ -712,6 +724,7 @@ mod tests {
         hippies[0].angry = true;
         hippies[0].anger_timer = 0.0;
         hippies[0].flee_timer = 0.0;
+        hippies[0].anger_delay = 0.0;
         let mut flags = Vec::new();
         update_hippies(
             &mut hippies,
@@ -737,6 +750,7 @@ mod tests {
         hippies[0].angry = true;
         hippies[0].anger_timer = 0.0;
         hippies[0].flee_timer = 0.0;
+        hippies[0].anger_delay = 0.0;
         let mut flags = Vec::new();
         update_hippies(
             &mut hippies,
@@ -770,6 +784,7 @@ mod tests {
         hippies[0].angry = true;
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
         hippies[0].flee_timer = 0.0;
+        hippies[0].anger_delay = 0.0;
         let mut flags = Vec::new();
         let mut inventory = 3;
         let total_before =
@@ -837,6 +852,7 @@ mod tests {
         hippies[0].angry = true;
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
         hippies[0].flee_timer = 0.0;
+        hippies[0].anger_delay = 0.0;
         let mut flags = Vec::new();
         let mut inventory = 2;
         update_hippies(
