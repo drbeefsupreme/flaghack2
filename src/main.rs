@@ -11,6 +11,7 @@ mod ley_lines;
 mod player;
 mod map;
 mod constants;
+mod npc;
 
 use constants::*;
 
@@ -42,6 +43,7 @@ struct Game {
     sparkle_spawn_counter: u32,
     t3mpcamp_inside: bool,
     t3mpcamp_notice_timer: f32,
+    hippies: Vec<npc::Hippie>,
     map: map::TileMap,
     map_regions: Vec<map::MapRegion>,
     camera: camera::CameraState,
@@ -63,6 +65,11 @@ impl Game {
             T3MPCAMP_VERTICES.to_vec(),
             MAP_REGION_COLOR,
         )];
+        let hippie_spawns = [
+            T3MPCAMP_CAMPFIRE_POS + vec2(-28.0, -16.0),
+            T3MPCAMP_CAMPFIRE_POS + vec2(26.0, 14.0),
+        ];
+        let hippies = npc::spawn_hippies(&hippie_spawns, &T3MPCAMP_VERTICES);
         let flags = flags::spawn_random_flags(
             FLAG_COUNT_START,
             field_rect,
@@ -94,6 +101,7 @@ impl Game {
             sparkle_spawn_counter: 0,
             t3mpcamp_inside: false,
             t3mpcamp_notice_timer: -1.0,
+            hippies,
             map,
             map_regions,
             camera: camera::CameraState::new(),
@@ -215,6 +223,7 @@ fn render_dungeon(game: &mut Game) {
     let player_center = game.player.pos
         + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
     update_t3mpcamp_notice(game, player_center, dt);
+    npc::update_hippies(&mut game.hippies, dt, &T3MPCAMP_VERTICES);
 
     let camera = build_camera(game);
     let view_rect = camera_view_rect(game, camera.target);
@@ -225,6 +234,7 @@ fn render_dungeon(game: &mut Game) {
         region.draw();
     }
     scenery::draw_scenery(&game.scenery, time);
+    npc::draw_hippies(&game.hippies);
     draw_ley_lines(&game.ley_lines, time);
     for flag in &game.flags {
         draw_flag(flag, time, game.wind);

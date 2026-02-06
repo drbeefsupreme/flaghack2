@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
+use crate::constants;
 use crate::fire;
 use crate::scale;
 
@@ -38,7 +39,6 @@ const CRYSTAL_SCALE: f32 = 1.5;
 pub const DOME_RADIUS: f32 = 100.0 * scale::MODEL_SCALE * DOME_SCALE;
 pub const DOME_HEIGHT: f32 = 100.0 * scale::MODEL_SCALE * DOME_SCALE;
 const CRYSTAL_DOME_POS: Vec2 = Vec2::new(4900.0, 3184.0);
-const LARGE_CAMPFIRE_POS: Vec2 = Vec2::new(4982.0, 3233.0);
 const LARGE_CAMPFIRE_SCALE: f32 = 1.5;
 const T3MPCAMP_TENT_SPACING: f32 = 14.0;
 const T3MPCAMP_ROW1_START: Vec2 = Vec2::new(4926.0, 3300.0);
@@ -116,7 +116,7 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
 
     items.push(SceneryItem {
         kind: SceneryKind::Campfire,
-        pos: LARGE_CAMPFIRE_POS,
+        pos: constants::T3MPCAMP_CAMPFIRE_POS,
         scale: LARGE_CAMPFIRE_SCALE,
         rotation: 0.0,
         variant: 0,
