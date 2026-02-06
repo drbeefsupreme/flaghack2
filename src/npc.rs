@@ -28,6 +28,8 @@ pub struct Hippie {
     pub anger_delay: f32,
     pub steal_cooldown: f32,
     pub flee_timer: f32,
+    pub drop_check_timer: f32,
+    pub ignore_flags_timer: f32,
     target: Vec2,
     speed: f32,
     rng_state: u32,
@@ -61,6 +63,8 @@ pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie
                 anger_delay: 0.0,
                 steal_cooldown: 0.0,
                 flee_timer: 0.0,
+                drop_check_timer: next_f32(&mut rng_state) * constants::HIPPIE_FLAG_DROP_INTERVAL,
+                ignore_flags_timer: 0.0,
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
@@ -88,6 +92,8 @@ pub fn spawn_hippies_with_flags(
                 anger_delay: 0.0,
                 steal_cooldown: 0.0,
                 flee_timer: 0.0,
+                drop_check_timer: next_f32(&mut rng_state) * constants::HIPPIE_FLAG_DROP_INTERVAL,
+                ignore_flags_timer: 0.0,
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
@@ -107,7 +113,9 @@ pub fn update_hippies(
 ) -> bool {
     let mut picked_any = false;
     for hippie in hippies {
-        if hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
+        update_hippie_drop(hippie, dt, flags);
+
+        if hippie.ignore_flags_timer <= 0.0 && hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
             picked_any |= hippie_pickup_flags(hippie, flags);
         }
 
@@ -329,6 +337,26 @@ fn hippie_pickup_flags(hippie: &mut Hippie, flags: &mut Vec<flags::Flag>) -> boo
         index += 1;
     }
     picked
+}
+
+fn update_hippie_drop(hippie: &mut Hippie, dt: f32, flags: &mut Vec<flags::Flag>) {
+    if hippie.ignore_flags_timer > 0.0 {
+        hippie.ignore_flags_timer = (hippie.ignore_flags_timer - dt).max(0.0);
+    }
+
+    hippie.drop_check_timer -= dt;
+    while hippie.drop_check_timer <= 0.0 {
+        hippie.drop_check_timer += constants::HIPPIE_FLAG_DROP_INTERVAL;
+        if hippie.carried_flags == 0 {
+            continue;
+        }
+        let roll = next_f32(&mut hippie.rng_state);
+        if roll <= constants::HIPPIE_FLAG_DROP_CHANCE {
+            hippie.carried_flags = hippie.carried_flags.saturating_sub(1);
+            flags.push(flags::make_flag(hippie.pos));
+            hippie.ignore_flags_timer = constants::HIPPIE_FLAG_IGNORE_DURATION;
+        }
+    }
 }
 
 fn steal_from_player(
@@ -570,6 +598,48 @@ mod tests {
     }
 
     #[test]
+    fn hippie_drop_sets_ignore_and_spawns_flag() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 1)], &square);
+        hippies[0].drop_check_timer = 0.0;
+        hippies[0].rng_state = 0;
+        let mut flags = Vec::new();
+        update_hippie_drop(&mut hippies[0], 0.1, &mut flags);
+        assert_eq!(hippies[0].carried_flags, 0);
+        assert_eq!(flags.len(), 1);
+        assert!((hippies[0].ignore_flags_timer - constants::HIPPIE_FLAG_IGNORE_DURATION).abs() < 1e-6);
+    }
+
+    #[test]
+    fn hippie_ignores_pickup_during_cooldown() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 0)], &square);
+        hippies[0].ignore_flags_timer = constants::HIPPIE_FLAG_IGNORE_DURATION;
+        let mut flags = vec![flags::Flag { pos: vec2(5.0, 5.0), phase: 0.0 }];
+        update_hippies(
+            &mut hippies,
+            0.0,
+            &square,
+            &mut flags,
+            vec2(0.0, 0.0),
+            &mut 0,
+            100.0,
+        );
+        assert_eq!(flags.len(), 1);
+        assert_eq!(hippies[0].carried_flags, 0);
+    }
+
+    #[test]
     fn hippie_picks_up_flags_until_full() {
         let square = vec![
             vec2(0.0, 0.0),
@@ -665,6 +735,8 @@ mod tests {
                 anger_delay: 0.0,
                 steal_cooldown: 0.0,
                 flee_timer: 0.0,
+                drop_check_timer: 0.0,
+                ignore_flags_timer: 0.0,
                 target: vec2(0.0, 0.0),
                 speed: HIPPIE_SPEED,
                 rng_state: 1,
@@ -678,6 +750,8 @@ mod tests {
                 anger_delay: 0.0,
                 steal_cooldown: 0.0,
                 flee_timer: 0.0,
+                drop_check_timer: 0.0,
+                ignore_flags_timer: 0.0,
                 target: vec2(0.0, 0.0),
                 speed: HIPPIE_SPEED,
                 rng_state: 2,
@@ -703,6 +777,8 @@ mod tests {
             anger_delay: 0.0,
             steal_cooldown: 0.0,
             flee_timer: 0.0,
+            drop_check_timer: 0.0,
+            ignore_flags_timer: 0.0,
             target: vec2(0.0, 0.0),
             speed: HIPPIE_SPEED,
             rng_state: 1,
@@ -725,6 +801,8 @@ mod tests {
         hippies[0].anger_timer = 0.0;
         hippies[0].flee_timer = 0.0;
         hippies[0].anger_delay = 0.0;
+        hippies[0].drop_check_timer = 0.0;
+        hippies[0].ignore_flags_timer = 0.0;
         let mut flags = Vec::new();
         update_hippies(
             &mut hippies,
@@ -751,6 +829,8 @@ mod tests {
         hippies[0].anger_timer = 0.0;
         hippies[0].flee_timer = 0.0;
         hippies[0].anger_delay = 0.0;
+        hippies[0].drop_check_timer = 0.0;
+        hippies[0].ignore_flags_timer = 0.0;
         let mut flags = Vec::new();
         update_hippies(
             &mut hippies,
@@ -785,6 +865,8 @@ mod tests {
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
         hippies[0].flee_timer = 0.0;
         hippies[0].anger_delay = 0.0;
+        hippies[0].drop_check_timer = 0.0;
+        hippies[0].ignore_flags_timer = 0.0;
         let mut flags = Vec::new();
         let mut inventory = 3;
         let total_before =
@@ -853,6 +935,8 @@ mod tests {
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
         hippies[0].flee_timer = 0.0;
         hippies[0].anger_delay = 0.0;
+        hippies[0].drop_check_timer = 0.0;
+        hippies[0].ignore_flags_timer = 0.0;
         let mut flags = Vec::new();
         let mut inventory = 2;
         update_hippies(
