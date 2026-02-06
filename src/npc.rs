@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 use crate::constants;
-use crate::flags;
+use crate::flag_state;
 use crate::geom;
 use crate::player;
 use crate::scale;
@@ -36,9 +36,16 @@ pub struct Hippie {
     rng_state: u32,
 }
 
-pub fn try_steal_flag(hippies: &mut [Hippie], origin: Vec2, radius: f32) -> bool {
+pub fn try_steal_flag(
+    hippies: &mut [Hippie],
+    origin: Vec2,
+    radius: f32,
+    flag_state: &mut flag_state::FlagState,
+) -> bool {
     if let Some(index) = nearest_hippie_with_flag(hippies, origin, radius) {
-        hippies[index].carried_flags = hippies[index].carried_flags.saturating_sub(1);
+        if !flag_state.steal_from_hippie(&mut hippies[index].carried_flags) {
+            return false;
+        }
         hippies[index].angry = true;
         hippies[index].anger_timer = constants::HIPPIE_ANGER_DURATION;
         hippies[index].anger_delay = constants::HIPPIE_ANGER_DELAY;
@@ -107,17 +114,21 @@ pub fn update_hippies(
     hippies: &mut [Hippie],
     dt: f32,
     region_vertices: &[Vec2],
-    flags: &mut Vec<flags::Flag>,
+    flag_state: &mut flag_state::FlagState,
     player_pos: Vec2,
-    player_inventory: &mut u32,
     player_speed: f32,
 ) -> bool {
     let mut picked_any = false;
     for hippie in hippies {
-        update_hippie_drop(hippie, dt, flags);
+        update_hippie_drop(hippie, dt, flag_state);
 
         if hippie.ignore_flags_timer <= 0.0 && hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
-            picked_any |= hippie_pickup_flags(hippie, flags);
+            picked_any |= flag_state.transfer_ground_to_hippie(
+                &mut hippie.carried_flags,
+                HIPPIE_FLAG_CAPACITY,
+                hippie.pos,
+                HIPPIE_FLAG_PICKUP_RADIUS,
+            );
         }
 
         update_hippie_anger(hippie, player_pos, dt);
@@ -125,7 +136,7 @@ pub fn update_hippies(
         let angry = hippie.angry;
 
         if angry && hippie.anger_delay <= 0.0 {
-            steal_from_player(hippie, player_pos, player_inventory, flags, dt);
+            steal_from_player(hippie, player_pos, flag_state, dt);
         }
 
         if !angry
@@ -324,23 +335,7 @@ fn rotate_vec(point: Vec2, angle: f32) -> Vec2 {
     )
 }
 
-fn hippie_pickup_flags(hippie: &mut Hippie, flags: &mut Vec<flags::Flag>) -> bool {
-    let mut picked = false;
-    let mut index = 0;
-    while index < flags.len() && hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
-        let flag_pos = flags[index].pos;
-        if flag_pos.distance(hippie.pos) <= HIPPIE_FLAG_PICKUP_RADIUS {
-            flags.swap_remove(index);
-            hippie.carried_flags += 1;
-            picked = true;
-            continue;
-        }
-        index += 1;
-    }
-    picked
-}
-
-fn update_hippie_drop(hippie: &mut Hippie, dt: f32, flags: &mut Vec<flags::Flag>) {
+fn update_hippie_drop(hippie: &mut Hippie, dt: f32, flag_state: &mut flag_state::FlagState) {
     if hippie.ignore_flags_timer > 0.0 {
         hippie.ignore_flags_timer = (hippie.ignore_flags_timer - dt).max(0.0);
     }
@@ -353,8 +348,7 @@ fn update_hippie_drop(hippie: &mut Hippie, dt: f32, flags: &mut Vec<flags::Flag>
         }
         let roll = next_f32(&mut hippie.rng_state);
         if roll <= constants::HIPPIE_FLAG_DROP_CHANCE {
-            hippie.carried_flags = hippie.carried_flags.saturating_sub(1);
-            flags.push(flags::make_flag(hippie.pos));
+            flag_state.drop_from_hippie(&mut hippie.carried_flags, 1, hippie.pos);
             hippie.ignore_flags_timer = constants::HIPPIE_FLAG_IGNORE_DURATION;
         }
     }
@@ -363,8 +357,7 @@ fn update_hippie_drop(hippie: &mut Hippie, dt: f32, flags: &mut Vec<flags::Flag>
 fn steal_from_player(
     hippie: &mut Hippie,
     player_pos: Vec2,
-    player_inventory: &mut u32,
-    flags: &mut Vec<flags::Flag>,
+    flag_state: &mut flag_state::FlagState,
     dt: f32,
 ) {
     if hippie.steal_cooldown > 0.0 {
@@ -379,26 +372,14 @@ fn steal_from_player(
         return;
     }
 
-    let stolen = if *player_inventory >= 2 {
-        2
-    } else if *player_inventory >= 1 {
-        1
-    } else {
-        0
-    };
+    let stolen = flag_state.steal_from_player_to_hippie(
+        &mut hippie.carried_flags,
+        HIPPIE_FLAG_CAPACITY,
+        hippie.pos,
+        2,
+    );
 
     if stolen > 0 {
-        *player_inventory -= stolen;
-        let mut remaining = stolen as u8;
-        while remaining > 0 {
-            if hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
-                hippie.carried_flags += 1;
-            } else {
-                flags.push(flags::make_flag(hippie.pos));
-            }
-            remaining -= 1;
-        }
-
         hippie.steal_cooldown = constants::HIPPIE_STEAL_COOLDOWN;
         hippie.angry = false;
         hippie.anger_timer = 0.0;
@@ -513,6 +494,8 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flags;
+    use crate::flag_state::FlagState;
 
     #[test]
     fn point_in_polygon_detects_inside() {
@@ -550,15 +533,14 @@ mod tests {
             vec2(0.0, 20.0),
         ];
         let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
-        let mut flags = Vec::new();
+        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
         for _ in 0..60 {
             update_hippies(
                 &mut hippies,
                 0.1,
                 &square,
-                &mut flags,
+                &mut flag_state,
                 vec2(50.0, 50.0),
-                &mut 0,
                 100.0,
             );
             assert!(geom::point_in_polygon(hippies[0].pos, &square));
@@ -576,10 +558,10 @@ mod tests {
         let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 1)], &square);
         hippies[0].drop_check_timer = 0.0;
         hippies[0].rng_state = 0;
-        let mut flags = Vec::new();
-        update_hippie_drop(&mut hippies[0], 0.1, &mut flags);
+        let mut flag_state = FlagState::new(Vec::new(), 0, 1);
+        update_hippie_drop(&mut hippies[0], 0.1, &mut flag_state);
         assert_eq!(hippies[0].carried_flags, 0);
-        assert_eq!(flags.len(), 1);
+        assert_eq!(flag_state.ground_flags().len(), 1);
         assert!((hippies[0].ignore_flags_timer - constants::HIPPIE_FLAG_IGNORE_DURATION).abs() < 1e-6);
     }
 
@@ -593,17 +575,20 @@ mod tests {
         ];
         let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 0)], &square);
         hippies[0].ignore_flags_timer = constants::HIPPIE_FLAG_IGNORE_DURATION;
-        let mut flags = vec![flags::Flag { pos: vec2(5.0, 5.0), phase: 0.0 }];
+        let mut flag_state = FlagState::new(
+            vec![flags::Flag { pos: vec2(5.0, 5.0), phase: 0.0 }],
+            0,
+            1,
+        );
         update_hippies(
             &mut hippies,
             0.0,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(0.0, 0.0),
-            &mut 0,
             100.0,
         );
-        assert_eq!(flags.len(), 1);
+        assert_eq!(flag_state.ground_flags().len(), 1);
         assert_eq!(hippies[0].carried_flags, 0);
     }
 
@@ -616,24 +601,23 @@ mod tests {
             vec2(0.0, 20.0),
         ];
         let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
-        let mut flags = vec![
+        let flags = vec![
             flags::Flag { pos: vec2(10.0, 11.0), phase: 0.0 },
             flags::Flag { pos: vec2(9.0, 10.0), phase: 0.0 },
             flags::Flag { pos: vec2(12.0, 10.0), phase: 0.0 },
         ];
-        let mut inventory = 0;
+        let mut flag_state = FlagState::new(flags, 0, 3);
         let picked = update_hippies(
             &mut hippies,
             0.0,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(0.0, 0.0),
-            &mut inventory,
             100.0,
         );
         assert!(picked);
         assert_eq!(hippies[0].carried_flags, 2);
-        assert_eq!(flags.len(), 1);
+        assert_eq!(flag_state.ground_flags().len(), 1);
     }
 
     #[test]
@@ -646,19 +630,21 @@ mod tests {
         ];
         let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
         hippies[0].carried_flags = HIPPIE_FLAG_CAPACITY;
-        let mut flags = vec![flags::Flag { pos: vec2(10.0, 10.0), phase: 0.0 }];
-        let mut inventory = 0;
+        let mut flag_state = FlagState::new(
+            vec![flags::Flag { pos: vec2(10.0, 10.0), phase: 0.0 }],
+            0,
+            3,
+        );
         let picked = update_hippies(
             &mut hippies,
             0.0,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(0.0, 0.0),
-            &mut inventory,
             100.0,
         );
         assert!(!picked);
-        assert_eq!(flags.len(), 1);
+        assert_eq!(flag_state.ground_flags().len(), 1);
     }
 
     #[test]
@@ -726,10 +712,12 @@ mod tests {
             },
         ];
 
-        let stolen = try_steal_flag(&mut hippies, vec2(2.5, 0.0), 4.0);
+        let mut flag_state = FlagState::new(Vec::new(), 0, 3);
+        let stolen = try_steal_flag(&mut hippies, vec2(2.5, 0.0), 4.0, &mut flag_state);
         assert!(stolen);
         assert_eq!(hippies[1].carried_flags, 1);
         assert_eq!(hippies[0].carried_flags, 1);
+        assert_eq!(flag_state.player_inventory(), 1);
         assert!(hippies[1].angry);
         assert!((hippies[1].anger_timer - constants::HIPPIE_ANGER_DURATION).abs() < 1e-6);
     }
@@ -752,8 +740,10 @@ mod tests {
             rng_state: 1,
         }];
 
-        let stolen = try_steal_flag(&mut hippies, vec2(0.0, 0.0), 4.0);
+        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let stolen = try_steal_flag(&mut hippies, vec2(0.0, 0.0), 4.0, &mut flag_state);
         assert!(!stolen);
+        assert_eq!(flag_state.player_inventory(), 0);
     }
 
     #[test]
@@ -771,14 +761,13 @@ mod tests {
         hippies[0].anger_delay = 0.0;
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
-        let mut flags = Vec::new();
+        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
         update_hippies(
             &mut hippies,
             0.1,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(100.0, 100.0),
-            &mut 0,
             100.0,
         );
         assert!(!hippies[0].angry);
@@ -799,14 +788,13 @@ mod tests {
         hippies[0].anger_delay = 0.0;
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
-        let mut flags = Vec::new();
+        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
         update_hippies(
             &mut hippies,
             0.1,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(6.0, 6.0),
-            &mut 0,
             100.0,
         );
         assert!(hippies[0].angry);
@@ -835,23 +823,21 @@ mod tests {
         hippies[0].anger_delay = 0.0;
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
-        let mut flags = Vec::new();
-        let mut inventory = 3;
+        let mut flag_state = FlagState::new(Vec::new(), 3, 3);
         let total_before =
-            inventory + flags.len() as u32 + hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>();
+            flag_state.current_total(hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>());
         update_hippies(
             &mut hippies,
             0.0,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(5.0, 5.0),
-            &mut inventory,
             100.0,
         );
-        assert_eq!(inventory, 1);
+        assert_eq!(flag_state.player_inventory(), 1);
         assert_eq!(hippies[0].carried_flags, 2);
         let total_after =
-            inventory + flags.len() as u32 + hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>();
+            flag_state.current_total(hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>());
         assert_eq!(total_before, total_after);
         assert!(hippies[0].steal_cooldown > 0.0);
         assert!(!hippies[0].angry);
@@ -869,24 +855,22 @@ mod tests {
         let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 2)], &square);
         hippies[0].angry = true;
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
-        let mut flags = Vec::new();
-        let mut inventory = 2;
+        let mut flag_state = FlagState::new(Vec::new(), 2, 4);
         let total_before =
-            inventory + flags.len() as u32 + hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>();
+            flag_state.current_total(hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>());
         update_hippies(
             &mut hippies,
             0.0,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(5.0, 5.0),
-            &mut inventory,
             100.0,
         );
-        assert_eq!(inventory, 0);
+        assert_eq!(flag_state.player_inventory(), 0);
         assert_eq!(hippies[0].carried_flags, 2);
-        assert_eq!(flags.len(), 2);
+        assert_eq!(flag_state.ground_flags().len(), 2);
         let total_after =
-            inventory + flags.len() as u32 + hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>();
+            flag_state.current_total(hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>());
         assert_eq!(total_before, total_after);
     }
 
@@ -905,28 +889,25 @@ mod tests {
         hippies[0].anger_delay = 0.0;
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
-        let mut flags = Vec::new();
-        let mut inventory = 2;
+        let mut flag_state = FlagState::new(Vec::new(), 2, 2);
         update_hippies(
             &mut hippies,
             0.0,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(5.0, 5.0),
-            &mut inventory,
             100.0,
         );
-        let after_first = inventory;
+        let after_first = flag_state.player_inventory();
         update_hippies(
             &mut hippies,
             0.0,
             &square,
-            &mut flags,
+            &mut flag_state,
             vec2(5.0, 5.0),
-            &mut inventory,
             100.0,
         );
-        assert_eq!(inventory, after_first);
+        assert_eq!(flag_state.player_inventory(), after_first);
     }
 
     #[test]

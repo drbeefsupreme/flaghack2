@@ -14,6 +14,7 @@ mod constants;
 mod npc;
 mod hud;
 mod geom;
+mod flag_state;
 
 use constants::*;
 
@@ -34,8 +35,7 @@ struct Game {
     scene: Scene,
     player: Player,
     class_name: &'static str,
-    flags: Vec<flags::Flag>,
-    flag_inventory: u32,
+    flag_state: flag_state::FlagState,
     wind: flags::Wind,
     scenery: Vec<scenery::SceneryItem>,
     ley_lines: Vec<ley_lines::LeyLine>,
@@ -46,7 +46,6 @@ struct Game {
     t3mpcamp_inside: bool,
     t3mpcamp_notice_timer: f32,
     hippies: Vec<npc::Hippie>,
-    total_flags: u32,
     map: map::TileMap,
     map_regions: Vec<map::MapRegion>,
     camera: camera::CameraState,
@@ -75,14 +74,19 @@ impl Game {
             (T3MPCAMP_CAMPFIRE_POS + vec2(18.0, -24.0), 2),
         ];
         let hippies = npc::spawn_hippies_with_flags(&hippie_spawns, &T3MPCAMP_VERTICES);
-        let flags = flags::spawn_random_flags(
+        let ground_flags = flags::spawn_random_flags(
             FLAG_COUNT_START,
             field_rect,
             40.0 * scale::MODEL_SCALE,
         );
         let total_flags =
-            flags.len() as u32 + STARTING_FLAG_INVENTORY + total_hippie_flags(&hippies);
-        let ley_state = ley_lines::compute_ley_state(&flags, LEY_MAX_DISTANCE);
+            ground_flags.len() as u32 + STARTING_FLAG_INVENTORY + total_hippie_flags(&hippies);
+        let flag_state = flag_state::FlagState::new(
+            ground_flags,
+            STARTING_FLAG_INVENTORY,
+            total_flags,
+        );
+        let ley_state = ley_lines::compute_ley_state(flag_state.ground_flags(), LEY_MAX_DISTANCE);
         let player_speed = map::adjusted_travel_speed(
             map.width,
             map.height,
@@ -96,8 +100,7 @@ impl Game {
                 facing: player::Facing::Down,
             },
             class_name: "Vexillomancer",
-            flags,
-            flag_inventory: STARTING_FLAG_INVENTORY,
+            flag_state,
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
             scenery: scenery::spawn_scenery(field_rect),
             ley_lines: ley_state.lines,
@@ -108,7 +111,6 @@ impl Game {
             t3mpcamp_inside: false,
             t3mpcamp_notice_timer: -1.0,
             hippies,
-            total_flags,
             map,
             map_regions,
             camera: camera::CameraState::new(),
@@ -234,9 +236,8 @@ fn render_dungeon(game: &mut Game) {
         &mut game.hippies,
         dt,
         &T3MPCAMP_VERTICES,
-        &mut game.flags,
+        &mut game.flag_state,
         player_center,
-        &mut game.flag_inventory,
         game.player_speed,
     );
     if hippies_picked {
@@ -254,7 +255,7 @@ fn render_dungeon(game: &mut Game) {
     scenery::draw_scenery(&game.scenery, time);
     npc::draw_hippies(&game.hippies);
     draw_ley_lines(&game.ley_lines, time);
-    for flag in &game.flags {
+    for flag in game.flag_state.ground_flags() {
         draw_flag(flag, time, game.wind);
     }
 
@@ -277,13 +278,14 @@ fn render_dungeon(game: &mut Game) {
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
     draw_centered("Q to quit", 160.0, 20.0, ACCENT);
     hud::draw_hud(
-        game.flag_inventory,
+        game.flag_state.player_inventory(),
         game.player_speed,
         game.player.pos,
         current_total_flags(game),
     );
 
-    debug_assert_eq!(game.total_flags, current_total_flags(game));
+    game.flag_state
+        .debug_assert_invariant(total_hippie_flags(&game.hippies));
 
     if is_key_pressed(KeyCode::Escape) {
         game.scene = Scene::ClassSelect;
@@ -316,13 +318,9 @@ fn handle_flag_interactions(game: &mut Game) {
     let field = game.map.field_rect();
 
     if is_mouse_button_pressed(MouseButton::Left) {
-        let placed = flags::try_place_flag(
-            &mut game.flags,
-            &mut game.flag_inventory,
-            game.player.pos,
-            FLAG_PLACE_OFFSET,
-            field,
-        );
+        let placed =
+            game.flag_state
+                .try_place_from_player(game.player.pos, FLAG_PLACE_OFFSET, field);
         if placed {
             recompute_ley_state(game);
             return;
@@ -330,16 +328,21 @@ fn handle_flag_interactions(game: &mut Game) {
     }
 
     if is_mouse_button_pressed(MouseButton::Right) {
-        if flags::try_pickup_flag(&mut game.flags, game.player.pos, FLAG_INTERACT_RADIUS) {
-            game.flag_inventory = game.flag_inventory.saturating_add(1);
+        if game
+            .flag_state
+            .try_pickup_to_player(game.player.pos, FLAG_INTERACT_RADIUS)
+        {
             recompute_ley_state(game);
         }
 
         let player_center = game.player.pos
             + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
-        if npc::try_steal_flag(&mut game.hippies, player_center, HIPPIE_STEAL_RADIUS) {
-            game.flag_inventory = game.flag_inventory.saturating_add(1);
-        }
+        npc::try_steal_flag(
+            &mut game.hippies,
+            player_center,
+            HIPPIE_STEAL_RADIUS,
+            &mut game.flag_state,
+        );
     }
 }
 
@@ -424,7 +427,8 @@ fn player_in_pentagram(pos: Vec2, centers: &[Vec2]) -> bool {
 }
 
 fn current_total_flags(game: &Game) -> u32 {
-    game.flags.len() as u32 + game.flag_inventory + total_hippie_flags(&game.hippies)
+    game.flag_state
+        .current_total(total_hippie_flags(&game.hippies))
 }
 
 fn total_hippie_flags(hippies: &[npc::Hippie]) -> u32 {
@@ -432,7 +436,7 @@ fn total_hippie_flags(hippies: &[npc::Hippie]) -> u32 {
 }
 
 fn recompute_ley_state(game: &mut Game) {
-    let state = ley_lines::compute_ley_state(&game.flags, LEY_MAX_DISTANCE);
+    let state = ley_lines::compute_ley_state(game.flag_state.ground_flags(), LEY_MAX_DISTANCE);
     game.ley_lines = state.lines;
     game.pentagram_centers = state.pentagram_centers;
 }
