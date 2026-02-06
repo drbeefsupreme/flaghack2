@@ -84,7 +84,6 @@ pub fn spawn_hippies(positions: &[Vec2], camp_index: usize, camp_vertices: &[Vec
         .collect()
 }
 
-#[cfg(test)]
 pub fn spawn_hippies_with_flags(
     spawns: &[(Vec2, u8)],
     camp_index: usize,
@@ -563,7 +562,7 @@ fn nearest_hippie_with_flag(hippies: &[Hippie], origin: Vec2, radius: f32) -> Op
     best
 }
 
-fn random_point_in_polygon(vertices: &[Vec2], rng_state: &mut u32) -> Vec2 {
+pub(crate) fn random_point_in_polygon(vertices: &[Vec2], rng_state: &mut u32) -> Vec2 {
     let Some((min, max)) = geom::polygon_bounds(vertices) else {
         return Vec2::ZERO;
     };

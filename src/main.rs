@@ -26,6 +26,23 @@ enum Scene {
     Dungeon,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ClassChoice {
+    Vexillomancer,
+    StressTest,
+}
+
+impl ClassChoice {
+    fn name(self) -> &'static str {
+        match self {
+            ClassChoice::Vexillomancer => "Vexillomancer",
+            ClassChoice::StressTest => "Stress Test",
+        }
+    }
+}
+
+const CLASS_OPTIONS: [ClassChoice; 2] = [ClassChoice::Vexillomancer, ClassChoice::StressTest];
+
 #[derive(Clone, Copy, Debug)]
 struct Player {
     pos: Vec2,
@@ -35,7 +52,7 @@ struct Player {
 struct Game {
     scene: Scene,
     player: Player,
-    class_name: &'static str,
+    class_index: usize,
     flag_state: flag_state::FlagState,
     wind: flags::Wind,
     scenery: Vec<scenery::SceneryItem>,
@@ -80,6 +97,10 @@ struct Assets {
 
 impl Game {
     fn new() -> Self {
+        Self::new_with_class(ClassChoice::Vexillomancer)
+    }
+
+    fn new_with_class(class_choice: ClassChoice) -> Self {
         let map = map::TileMap::load_from_dir(MAP_TILE_DIR);
         let field_rect = map.field_rect();
         let camp_configs = camps::camp_configs();
@@ -92,16 +113,22 @@ impl Game {
             .map(|camp| CampNotice::new(camp.name, camp.notice_text))
             .collect::<Vec<_>>();
         let camp_vertices = camps::collect_camp_vertices(&camp_configs);
-        let mut hippies = Vec::new();
-        for (camp_index, camp) in camp_configs.iter().enumerate() {
-            if !camp.spawns.hippies.is_empty() {
-                hippies.extend(npc::spawn_hippies(
-                    &camp.spawns.hippies,
-                    camp_index,
-                    &camp.vertices,
-                ));
+        let hippies = match class_choice {
+            ClassChoice::Vexillomancer => {
+                let mut hippies = Vec::new();
+                for (camp_index, camp) in camp_configs.iter().enumerate() {
+                    if !camp.spawns.hippies.is_empty() {
+                        hippies.extend(npc::spawn_hippies(
+                            &camp.spawns.hippies,
+                            camp_index,
+                            &camp.vertices,
+                        ));
+                    }
+                }
+                hippies
             }
-        }
+            ClassChoice::StressTest => spawn_stress_test_hippies(&camp_configs),
+        };
         let camp_spawns = camps::collect_scenery_spawns(&camp_configs);
         let ground_flags =
             flags::spawn_random_flags(FLAG_COUNT_START, field_rect, 40.0 * scale::MODEL_SCALE);
@@ -123,7 +150,7 @@ impl Game {
                 pos: PLAYER_SPAWN_POS,
                 facing: player::Facing::Down,
             },
-            class_name: "Vexillomancer",
+            class_index: class_choice_index(class_choice),
             flag_state,
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
             scenery,
@@ -143,6 +170,51 @@ impl Game {
             player_speed,
         }
     }
+}
+
+fn class_choice_index(choice: ClassChoice) -> usize {
+    match choice {
+        ClassChoice::Vexillomancer => 0,
+        ClassChoice::StressTest => 1,
+    }
+}
+
+fn class_choice_from_index(index: usize) -> ClassChoice {
+    CLASS_OPTIONS[index.min(CLASS_OPTIONS.len() - 1)]
+}
+
+fn spawn_stress_test_hippies(camp_configs: &[camps::CampConfig]) -> Vec<npc::Hippie> {
+    if camp_configs.is_empty() || STRESS_TEST_HIPPIE_COUNT == 0 {
+        return Vec::new();
+    }
+
+    let camp_count = camp_configs.len();
+    let per_camp = STRESS_TEST_HIPPIE_COUNT / camp_count;
+    let remainder = STRESS_TEST_HIPPIE_COUNT % camp_count;
+    let mut hippies = Vec::with_capacity(STRESS_TEST_HIPPIE_COUNT);
+    let mut rng_state = 1u32;
+
+    for (camp_index, camp) in camp_configs.iter().enumerate() {
+        let count = per_camp + usize::from(camp_index < remainder);
+        if count == 0 {
+            continue;
+        }
+
+        let mut spawns = Vec::with_capacity(count);
+        for _ in 0..count {
+            rng_state = rng_state.wrapping_mul(1664525).wrapping_add(1013904223);
+            let pos = npc::random_point_in_polygon(&camp.vertices, &mut rng_state);
+            spawns.push((pos, STRESS_TEST_FLAGS_PER_HIPPIE));
+        }
+
+        hippies.extend(npc::spawn_hippies_with_flags(
+            &spawns,
+            camp_index,
+            &camp.vertices,
+        ));
+    }
+
+    hippies
 }
 
 impl Assets {
@@ -228,12 +300,27 @@ fn render_class_select(game: &mut Game) {
 
     draw_centered("Choose Your Class", 120.0, 44.0, ACCENT);
 
-    let class_line = format!("> {} <", game.class_name);
-    draw_centered(&class_line, 220.0, 32.0, ACCENT);
+    if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+        game.class_index = (game.class_index + 1) % CLASS_OPTIONS.len();
+    }
+    if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+        game.class_index = (game.class_index + CLASS_OPTIONS.len() - 1) % CLASS_OPTIONS.len();
+    }
 
-    draw_centered("Enter to begin", 300.0, 24.0, ACCENT);
-    draw_centered("Esc to go back", 332.0, 20.0, ACCENT);
-    draw_centered("Q to quit", 360.0, 20.0, ACCENT);
+    for (index, choice) in CLASS_OPTIONS.iter().enumerate() {
+        let label = choice.name();
+        let line = if index == game.class_index {
+            format!("> {} <", label)
+        } else {
+            label.to_string()
+        };
+        draw_centered(&line, 220.0 + index as f32 * 36.0, 32.0, ACCENT);
+    }
+
+    draw_centered("Up/Down to choose", 300.0, 18.0, ACCENT);
+    draw_centered("Enter to begin", 325.0, 24.0, ACCENT);
+    draw_centered("Esc to go back", 357.0, 20.0, ACCENT);
+    draw_centered("Q to quit", 385.0, 20.0, ACCENT);
 
     if is_key_pressed(KeyCode::Escape) {
         game.scene = Scene::Title;
@@ -241,7 +328,11 @@ fn render_class_select(game: &mut Game) {
     }
 
     if is_key_pressed(KeyCode::Enter) {
-        game.scene = Scene::Dungeon;
+        let choice = class_choice_from_index(game.class_index);
+        let mut new_game = Game::new_with_class(choice);
+        new_game.scene = Scene::Dungeon;
+        new_game.class_index = game.class_index;
+        *game = new_game;
     }
 }
 
@@ -951,5 +1042,26 @@ mod tests {
         let hippies =
             npc::spawn_hippies_with_flags(&[(vec2(1.0, 1.0), 1), (vec2(2.0, 2.0), 2)], 0, &camp);
         assert_eq!(total_hippie_flags(&hippies), 3);
+    }
+
+    #[test]
+    fn stress_test_spawns_hippies_with_one_flag_each() {
+        let camp_configs = camps::camp_configs();
+        let hippies = spawn_stress_test_hippies(&camp_configs);
+        assert_eq!(hippies.len(), STRESS_TEST_HIPPIE_COUNT);
+        assert!(hippies
+            .iter()
+            .all(|hippie| hippie.carried_flags == STRESS_TEST_FLAGS_PER_HIPPIE));
+
+        let mut counts = vec![0usize; camp_configs.len()];
+        for hippie in &hippies {
+            counts[hippie.camp_index] += 1;
+        }
+        let per_camp = STRESS_TEST_HIPPIE_COUNT / camp_configs.len();
+        let remainder = STRESS_TEST_HIPPIE_COUNT % camp_configs.len();
+        for (index, count) in counts.iter().enumerate() {
+            let expected = per_camp + usize::from(index < remainder);
+            assert_eq!(*count, expected);
+        }
     }
 }
