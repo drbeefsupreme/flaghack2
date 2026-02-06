@@ -31,6 +31,7 @@ pub struct Hippie {
     pub flee_timer: f32,
     pub drop_check_timer: f32,
     pub ignore_flags_timer: f32,
+    pub region_index: usize,
     target: Vec2,
     speed: f32,
     rng_state: u32,
@@ -55,7 +56,11 @@ pub fn try_steal_flag(
     false
 }
 
-pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie> {
+pub fn spawn_hippies(
+    positions: &[Vec2],
+    region_index: usize,
+    region_vertices: &[Vec2],
+) -> Vec<Hippie> {
     positions
         .iter()
         .enumerate()
@@ -73,6 +78,7 @@ pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie
                 flee_timer: 0.0,
                 drop_check_timer: next_f32(&mut rng_state) * constants::HIPPIE_FLAG_DROP_INTERVAL,
                 ignore_flags_timer: 0.0,
+                region_index,
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
@@ -83,6 +89,7 @@ pub fn spawn_hippies(positions: &[Vec2], region_vertices: &[Vec2]) -> Vec<Hippie
 
 pub fn spawn_hippies_with_flags(
     spawns: &[(Vec2, u8)],
+    region_index: usize,
     region_vertices: &[Vec2],
 ) -> Vec<Hippie> {
     spawns
@@ -102,6 +109,7 @@ pub fn spawn_hippies_with_flags(
                 flee_timer: 0.0,
                 drop_check_timer: next_f32(&mut rng_state) * constants::HIPPIE_FLAG_DROP_INTERVAL,
                 ignore_flags_timer: 0.0,
+                region_index,
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
@@ -113,13 +121,14 @@ pub fn spawn_hippies_with_flags(
 pub fn update_hippies(
     hippies: &mut [Hippie],
     dt: f32,
-    region_vertices: &[Vec2],
+    region_vertices: &[Vec<Vec2>],
     flag_state: &mut flag_state::FlagState,
     player_pos: Vec2,
     player_speed: f32,
 ) -> bool {
     let mut picked_any = false;
     for hippie in hippies {
+        let region = region_for_index(region_vertices, hippie.region_index);
         update_hippie_drop(hippie, dt, flag_state);
 
         if hippie.ignore_flags_timer <= 0.0 && hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
@@ -143,7 +152,7 @@ pub fn update_hippies(
             && hippie.flee_timer <= 0.0
             && hippie.pos.distance(hippie.target) <= HIPPIE_TARGET_EPSILON
         {
-            hippie.target = random_point_in_polygon(region_vertices, &mut hippie.rng_state);
+            hippie.target = random_point_in_polygon(region, &mut hippie.rng_state);
         }
 
         let target = if angry {
@@ -170,10 +179,10 @@ pub fn update_hippies(
             hippie.pos + to_target.normalize() * step
         };
 
-        if geom::point_in_polygon(next_pos, region_vertices) {
+        if geom::point_in_polygon(next_pos, region) {
             hippie.pos = next_pos;
         } else if !angry && hippie.flee_timer <= 0.0 {
-            hippie.target = random_point_in_polygon(region_vertices, &mut hippie.rng_state);
+            hippie.target = random_point_in_polygon(region, &mut hippie.rng_state);
         }
     }
     picked_any
@@ -475,6 +484,16 @@ fn random_point_in_polygon(vertices: &[Vec2], rng_state: &mut u32) -> Vec2 {
     vertices[0]
 }
 
+fn region_for_index<'a>(regions: &'a [Vec<Vec2>], index: usize) -> &'a [Vec2] {
+    if regions.is_empty() {
+        return &[];
+    }
+    regions
+        .get(index)
+        .map(|region| region.as_slice())
+        .unwrap_or_else(|| regions[0].as_slice())
+}
+
 fn next_f32(state: &mut u32) -> f32 {
     *state = state.wrapping_mul(1664525).wrapping_add(1013904223);
     let v = (*state >> 8) as f32;
@@ -532,13 +551,14 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
+        let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], 0, &square);
         let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let regions = vec![square.clone()];
         for _ in 0..60 {
             update_hippies(
                 &mut hippies,
                 0.1,
-                &square,
+                &regions,
                 &mut flag_state,
                 vec2(50.0, 50.0),
                 100.0,
@@ -555,7 +575,7 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 1)], &square);
+        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 1)], 0, &square);
         hippies[0].drop_check_timer = 0.0;
         hippies[0].rng_state = 0;
         let mut flag_state = FlagState::new(Vec::new(), 0, 1);
@@ -573,17 +593,18 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 0)], &square);
+        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 0)], 0, &square);
         hippies[0].ignore_flags_timer = constants::HIPPIE_FLAG_IGNORE_DURATION;
         let mut flag_state = FlagState::new(
             vec![flags::Flag { pos: vec2(5.0, 5.0), phase: 0.0 }],
             0,
             1,
         );
+        let regions = vec![square.clone()];
         update_hippies(
             &mut hippies,
             0.0,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(0.0, 0.0),
             100.0,
@@ -600,17 +621,18 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
+        let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], 0, &square);
         let flags = vec![
             flags::Flag { pos: vec2(10.0, 11.0), phase: 0.0 },
             flags::Flag { pos: vec2(9.0, 10.0), phase: 0.0 },
             flags::Flag { pos: vec2(12.0, 10.0), phase: 0.0 },
         ];
         let mut flag_state = FlagState::new(flags, 0, 3);
+        let regions = vec![square.clone()];
         let picked = update_hippies(
             &mut hippies,
             0.0,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(0.0, 0.0),
             100.0,
@@ -628,17 +650,18 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], &square);
+        let mut hippies = spawn_hippies(&[vec2(10.0, 10.0)], 0, &square);
         hippies[0].carried_flags = HIPPIE_FLAG_CAPACITY;
         let mut flag_state = FlagState::new(
             vec![flags::Flag { pos: vec2(10.0, 10.0), phase: 0.0 }],
             0,
             3,
         );
+        let regions = vec![square.clone()];
         let picked = update_hippies(
             &mut hippies,
             0.0,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(0.0, 0.0),
             100.0,
@@ -655,7 +678,7 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 5)], &square);
+        let hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 5)], 0, &square);
         assert_eq!(hippies[0].carried_flags, HIPPIE_FLAG_CAPACITY);
     }
 
@@ -691,6 +714,7 @@ mod tests {
                 flee_timer: 0.0,
                 drop_check_timer: 0.0,
                 ignore_flags_timer: 0.0,
+                region_index: 0,
                 target: vec2(0.0, 0.0),
                 speed: HIPPIE_SPEED,
                 rng_state: 1,
@@ -706,6 +730,7 @@ mod tests {
                 flee_timer: 0.0,
                 drop_check_timer: 0.0,
                 ignore_flags_timer: 0.0,
+                region_index: 0,
                 target: vec2(0.0, 0.0),
                 speed: HIPPIE_SPEED,
                 rng_state: 2,
@@ -735,6 +760,7 @@ mod tests {
             flee_timer: 0.0,
             drop_check_timer: 0.0,
             ignore_flags_timer: 0.0,
+            region_index: 0,
             target: vec2(0.0, 0.0),
             speed: HIPPIE_SPEED,
             rng_state: 1,
@@ -754,7 +780,7 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], &square);
+        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], 0, &square);
         hippies[0].angry = true;
         hippies[0].anger_timer = 0.0;
         hippies[0].flee_timer = 0.0;
@@ -762,10 +788,11 @@ mod tests {
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
         let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let regions = vec![square.clone()];
         update_hippies(
             &mut hippies,
             0.1,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(100.0, 100.0),
             100.0,
@@ -781,7 +808,7 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], &square);
+        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], 0, &square);
         hippies[0].angry = true;
         hippies[0].anger_timer = 0.0;
         hippies[0].flee_timer = 0.0;
@@ -789,10 +816,11 @@ mod tests {
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
         let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let regions = vec![square.clone()];
         update_hippies(
             &mut hippies,
             0.1,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(6.0, 6.0),
             100.0,
@@ -816,7 +844,7 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], &square);
+        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], 0, &square);
         hippies[0].angry = true;
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
         hippies[0].flee_timer = 0.0;
@@ -826,10 +854,11 @@ mod tests {
         let mut flag_state = FlagState::new(Vec::new(), 3, 3);
         let total_before =
             flag_state.current_total(hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>());
+        let regions = vec![square.clone()];
         update_hippies(
             &mut hippies,
             0.0,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(5.0, 5.0),
             100.0,
@@ -852,16 +881,17 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 2)], &square);
+        let mut hippies = spawn_hippies_with_flags(&[(vec2(5.0, 5.0), 2)], 0, &square);
         hippies[0].angry = true;
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
         let mut flag_state = FlagState::new(Vec::new(), 2, 4);
         let total_before =
             flag_state.current_total(hippies.iter().map(|h| h.carried_flags as u32).sum::<u32>());
+        let regions = vec![square.clone()];
         update_hippies(
             &mut hippies,
             0.0,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(5.0, 5.0),
             100.0,
@@ -882,7 +912,7 @@ mod tests {
             vec2(20.0, 20.0),
             vec2(0.0, 20.0),
         ];
-        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], &square);
+        let mut hippies = spawn_hippies(&[vec2(5.0, 5.0)], 0, &square);
         hippies[0].angry = true;
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
         hippies[0].flee_timer = 0.0;
@@ -890,10 +920,11 @@ mod tests {
         hippies[0].drop_check_timer = 0.0;
         hippies[0].ignore_flags_timer = 0.0;
         let mut flag_state = FlagState::new(Vec::new(), 2, 2);
+        let regions = vec![square.clone()];
         update_hippies(
             &mut hippies,
             0.0,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(5.0, 5.0),
             100.0,
@@ -902,7 +933,7 @@ mod tests {
         update_hippies(
             &mut hippies,
             0.0,
-            &square,
+            &regions,
             &mut flag_state,
             vec2(5.0, 5.0),
             100.0,
@@ -924,7 +955,7 @@ mod tests {
             vec2(200.0, 200.0),
             vec2(0.0, 200.0),
         ];
-        let mut hippies = spawn_hippies(&[vec2(50.0, 50.0)], &square);
+        let mut hippies = spawn_hippies(&[vec2(50.0, 50.0)], 0, &square);
         hippies[0].angry = true;
         hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
         hippies[0].anger_delay = 0.0;
@@ -935,10 +966,11 @@ mod tests {
 
         let mut flag_state = FlagState::new(Vec::new(), 0, 0);
         let player_pos = vec2(60.0, 50.0);
+        let regions = vec![square.clone()];
         update_hippies(
             &mut hippies,
             1.0,
-            &square,
+            &regions,
             &mut flag_state,
             player_pos,
             1000.0,

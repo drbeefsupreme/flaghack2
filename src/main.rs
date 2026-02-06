@@ -15,6 +15,7 @@ mod npc;
 mod hud;
 mod geom;
 mod flag_state;
+mod regions;
 
 use constants::*;
 
@@ -46,6 +47,7 @@ struct Game {
     flagic: u8,
     flagic_accum: f32,
     region_notices: Vec<RegionNotice>,
+    region_vertices: Vec<Vec<Vec2>>,
     hippies: Vec<npc::Hippie>,
     map: map::TileMap,
     map_regions: Vec<map::MapRegion>,
@@ -80,31 +82,36 @@ impl Game {
     fn new() -> Self {
         let map = map::TileMap::load_from_dir(MAP_TILE_DIR);
         let field_rect = map.field_rect();
-        // t3mpcamp + Georgia Peanuts: special camp area regions (hand-authored polygons).
-        let map_regions = vec![
-            map::MapRegion::new(T3MPCAMP_NAME, T3MPCAMP_VERTICES.to_vec(), MAP_REGION_COLOR),
-            map::MapRegion::new(
-                GEORGIA_PEANUTS_NAME,
-                GEORGIA_PEANUTS_VERTICES.to_vec(),
-                GEORGIA_PEANUTS_REGION_COLOR,
-            ),
-        ];
-        let hippie_spawns = [
-            (T3MPCAMP_CAMPFIRE_POS + vec2(-28.0, -16.0), 0),
-            (T3MPCAMP_CAMPFIRE_POS + vec2(26.0, 14.0), 0),
-            (T3MPCAMP_CAMPFIRE_POS + vec2(-12.0, 22.0), 1),
-            (T3MPCAMP_CAMPFIRE_POS + vec2(18.0, -24.0), 2),
-        ];
-        let hippies = npc::spawn_hippies_with_flags(&hippie_spawns, &T3MPCAMP_VERTICES);
-        let region_notices = vec![
-            RegionNotice::new(T3MPCAMP_NAME, "t3mpcamp.com"),
-            RegionNotice::new(GEORGIA_PEANUTS_NAME, "Georgia Peanuts"),
-        ];
+        let region_configs = regions::region_configs();
+        let map_regions = region_configs
+            .iter()
+            .map(|region| map::MapRegion::new(region.name, region.vertices.clone(), region.color))
+            .collect::<Vec<_>>();
+        let region_notices = region_configs
+            .iter()
+            .map(|region| RegionNotice::new(region.name, region.notice_text))
+            .collect::<Vec<_>>();
+        let region_vertices = regions::collect_region_vertices(&region_configs);
+        let mut hippies = Vec::new();
+        for (region_index, region) in region_configs.iter().enumerate() {
+            if !region.spawns.hippies.is_empty() {
+                hippies.extend(npc::spawn_hippies_with_flags(
+                    &region.spawns.hippies,
+                    region_index,
+                    &region.vertices,
+                ));
+            }
+        }
+        let region_spawns = regions::collect_scenery_spawns(&region_configs);
         let ground_flags = flags::spawn_random_flags(
             FLAG_COUNT_START,
             field_rect,
             40.0 * scale::MODEL_SCALE,
         );
+        let mut ground_flags = ground_flags;
+        for pos in regions::collect_flag_spawns(&region_configs) {
+            ground_flags.push(flags::make_flag(pos));
+        }
         let total_flags =
             ground_flags.len() as u32 + STARTING_FLAG_INVENTORY + total_hippie_flags(&hippies);
         let flag_state = flag_state::FlagState::new(
@@ -113,6 +120,7 @@ impl Game {
             total_flags,
         );
         let ley_state = ley_lines::compute_ley_state(flag_state.ground_flags(), LEY_MAX_DISTANCE);
+        let scenery = scenery::spawn_scenery(field_rect, &region_spawns);
         let player_speed = map::adjusted_travel_speed(
             map.width,
             map.height,
@@ -128,7 +136,7 @@ impl Game {
             class_name: "Vexillomancer",
             flag_state,
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
-            scenery: scenery::spawn_scenery(field_rect),
+            scenery,
             ley_lines: ley_state.lines,
             pentagram_centers: ley_state.pentagram_centers,
             pentagram_sparkles: Vec::new(),
@@ -137,6 +145,7 @@ impl Game {
             flagic: 0,
             flagic_accum: 0.0,
             region_notices,
+            region_vertices,
             hippies,
             map,
             map_regions,
@@ -262,7 +271,7 @@ fn render_dungeon(game: &mut Game) {
     let hippies_picked = npc::update_hippies(
         &mut game.hippies,
         dt,
-        &T3MPCAMP_VERTICES,
+        &game.region_vertices,
         &mut game.flag_state,
         player_center,
         game.player_speed,
@@ -926,6 +935,7 @@ mod tests {
         ];
         let hippies = npc::spawn_hippies_with_flags(
             &[(vec2(1.0, 1.0), 1), (vec2(2.0, 2.0), 2)],
+            0,
             &region,
         );
         assert_eq!(total_hippie_flags(&hippies), 3);

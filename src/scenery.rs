@@ -1,6 +1,5 @@
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
-use crate::constants;
 use crate::fire;
 use crate::scale;
 
@@ -30,6 +29,64 @@ pub struct SceneryItem {
     pub decorations: Vec<DomeDecoration>,
 }
 
+#[derive(Clone, Debug)]
+pub struct ScenerySpawn {
+    pub kind: SceneryKind,
+    pub pos: Vec2,
+    pub scale: f32,
+    pub rotation: f32,
+    pub variant: u8,
+    pub decorations: Vec<DomeDecoration>,
+}
+
+impl ScenerySpawn {
+    pub fn campfire(pos: Vec2, scale: f32) -> Self {
+        Self {
+            kind: SceneryKind::Campfire,
+            pos,
+            scale,
+            rotation: 0.0,
+            variant: 0,
+            decorations: Vec::new(),
+        }
+    }
+
+    pub fn chair(pos: Vec2, rotation: f32) -> Self {
+        Self {
+            kind: SceneryKind::Chair,
+            pos,
+            scale: 1.0,
+            rotation,
+            variant: 0,
+            decorations: Vec::new(),
+        }
+    }
+
+    pub fn tent(pos: Vec2, variant: u8) -> Self {
+        Self {
+            kind: SceneryKind::Tent,
+            pos,
+            scale: 1.0,
+            rotation: 0.0,
+            variant,
+            decorations: Vec::new(),
+        }
+    }
+}
+
+pub fn apply_spawns(items: &mut Vec<SceneryItem>, spawns: &[ScenerySpawn]) {
+    for spawn in spawns {
+        items.push(SceneryItem {
+            kind: spawn.kind,
+            pos: spawn.pos,
+            scale: spawn.scale,
+            rotation: spawn.rotation,
+            variant: spawn.variant,
+            decorations: spawn.decorations.clone(),
+        });
+    }
+}
+
 const BASE_W: f32 = 800.0;
 const BASE_H: f32 = 600.0;
 const DOME_COUNT: usize = 2;
@@ -39,12 +96,6 @@ const CRYSTAL_SCALE: f32 = 1.5;
 pub const DOME_RADIUS: f32 = 100.0 * scale::MODEL_SCALE * DOME_SCALE;
 pub const DOME_HEIGHT: f32 = 100.0 * scale::MODEL_SCALE * DOME_SCALE;
 const CRYSTAL_DOME_POS: Vec2 = Vec2::new(4900.0, 3184.0);
-const LARGE_CAMPFIRE_SCALE: f32 = 1.5;
-const T3MPCAMP_TENT_SPACING: f32 = 14.0;
-const T3MPCAMP_ROW1_START: Vec2 = Vec2::new(4926.0, 3300.0);
-const T3MPCAMP_ROW1_END: Vec2 = Vec2::new(5000.0, 3300.0);
-const T3MPCAMP_ROW2_START: Vec2 = Vec2::new(4926.0, 3317.0);
-const T3MPCAMP_ROW2_END: Vec2 = Vec2::new(5000.0, 3317.0);
 
 const TENT_COLORS: [Color; 5] = [
     Color::new(0.88, 0.48, 0.22, 1.0),
@@ -53,8 +104,9 @@ const TENT_COLORS: [Color; 5] = [
     Color::new(0.96, 0.62, 0.04, 1.0),
     Color::new(0.92, 0.28, 0.60, 1.0),
 ];
+pub const TENT_VARIANT_COUNT: u8 = TENT_COLORS.len() as u8;
 
-pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
+pub fn spawn_scenery(field: Rect, region_spawns: &[ScenerySpawn]) -> Vec<SceneryItem> {
     let mut items = Vec::new();
 
     let tents = [
@@ -76,9 +128,6 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
             decorations: Vec::new(),
         });
     }
-
-    // t3mpcamp: special camp area within the hand-authored region polygon.
-    add_t3mpcamp_tents(&mut items);
 
     let chairs = [
         vec2(150.0, 200.0),
@@ -113,15 +162,6 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
             decorations: Vec::new(),
         });
     }
-
-    items.push(SceneryItem {
-        kind: SceneryKind::Campfire,
-        pos: constants::T3MPCAMP_CAMPFIRE_POS,
-        scale: LARGE_CAMPFIRE_SCALE,
-        rotation: 0.0,
-        variant: 0,
-        decorations: Vec::new(),
-    });
 
     let crow_base_pos = vec2(5065.0, 3327.0);
     items.push(SceneryItem {
@@ -188,6 +228,8 @@ pub fn spawn_scenery(field: Rect) -> Vec<SceneryItem> {
         });
     }
 
+    apply_spawns(&mut items, region_spawns);
+
     items
 }
 
@@ -228,43 +270,6 @@ fn random_position(field: Rect, padding: f32) -> Vec2 {
     }
 
     vec2(gen_range(min_x, max_x), gen_range(min_y, max_y))
-}
-
-fn add_t3mpcamp_tents(items: &mut Vec<SceneryItem>) {
-    let rows = [
-        (T3MPCAMP_ROW1_START, T3MPCAMP_ROW1_END),
-        (T3MPCAMP_ROW2_START, T3MPCAMP_ROW2_END),
-    ];
-
-    for (row_index, (start, end)) in rows.iter().enumerate() {
-        let positions = line_points(*start, *end, T3MPCAMP_TENT_SPACING);
-        for (i, pos) in positions.into_iter().enumerate() {
-            items.push(SceneryItem {
-                kind: SceneryKind::Tent,
-                pos,
-                scale: 1.0,
-                rotation: 0.0,
-                variant: ((row_index + i) % TENT_COLORS.len()) as u8,
-                decorations: Vec::new(),
-            });
-        }
-    }
-}
-
-fn line_points(start: Vec2, end: Vec2, spacing: f32) -> Vec<Vec2> {
-    let length = (end - start).length();
-    if length < f32::EPSILON || spacing <= f32::EPSILON {
-        return vec![start];
-    }
-
-    let segments = ((length / spacing).round() as usize).max(1);
-    let count = segments + 1;
-    let mut points = Vec::with_capacity(count);
-    for i in 0..count {
-        let t = i as f32 / (count - 1) as f32;
-        points.push(start + (end - start) * t);
-    }
-    points
 }
 
 fn draw_tent(pos: Vec2, variant: u8) {
@@ -962,12 +967,15 @@ fn rotate_point(point: Vec2, origin: Vec2, angle: f32) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::regions;
     use crate::player;
 
     #[test]
     fn spawn_scenery_has_expected_counts() {
         let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
-        let items = spawn_scenery(field);
+        let regions = regions::region_configs();
+        let region_spawns = regions::collect_scenery_spawns(&regions);
+        let items = spawn_scenery(field, &region_spawns);
 
         let tents = items.iter().filter(|i| i.kind == SceneryKind::Tent).count();
         let chairs = items.iter().filter(|i| i.kind == SceneryKind::Chair).count();
@@ -985,12 +993,22 @@ mod tests {
             .filter(|i| i.decorations.contains(&DomeDecoration::Crystal))
             .count();
 
-        let row1 = line_points(T3MPCAMP_ROW1_START, T3MPCAMP_ROW1_END, T3MPCAMP_TENT_SPACING);
-        let row2 = line_points(T3MPCAMP_ROW2_START, T3MPCAMP_ROW2_END, T3MPCAMP_TENT_SPACING);
-        let expected_tents = 5 + row1.len() + row2.len();
-        assert_eq!(tents, expected_tents);
-        assert_eq!(chairs, 5);
-        assert_eq!(campfires, 3);
+        let region_tents = region_spawns
+            .iter()
+            .filter(|s| s.kind == SceneryKind::Tent)
+            .count();
+        let region_chairs = region_spawns
+            .iter()
+            .filter(|s| s.kind == SceneryKind::Chair)
+            .count();
+        let region_campfires = region_spawns
+            .iter()
+            .filter(|s| s.kind == SceneryKind::Campfire)
+            .count();
+
+        assert_eq!(tents, 5 + region_tents);
+        assert_eq!(chairs, 5 + region_chairs);
+        assert_eq!(campfires, 2 + region_campfires);
         assert_eq!(crow_bases, 1);
         assert_eq!(crows, 1);
         assert_eq!(trees, 5);
@@ -1001,7 +1019,9 @@ mod tests {
     #[test]
     fn spawn_scenery_within_field() {
         let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
-        let items = spawn_scenery(field);
+        let regions = regions::region_configs();
+        let region_spawns = regions::collect_scenery_spawns(&regions);
+        let items = spawn_scenery(field, &region_spawns);
 
         for item in items {
             assert!(item.pos.x >= field.x && item.pos.x <= field.x + field.w);

@@ -36,6 +36,22 @@ pub fn polygon_bounds(vertices: &[Vec2]) -> Option<(Vec2, Vec2)> {
     Some((min, max))
 }
 
+pub fn line_points(start: Vec2, end: Vec2, spacing: f32) -> Vec<Vec2> {
+    let length = (end - start).length();
+    if length < f32::EPSILON || spacing <= f32::EPSILON {
+        return vec![start];
+    }
+
+    let segments = ((length / spacing).round() as usize).max(1);
+    let count = segments + 1;
+    let mut points = Vec::with_capacity(count);
+    for i in 0..count {
+        let t = i as f32 / (count - 1) as f32;
+        points.push(start + (end - start) * t);
+    }
+    points
+}
+
 pub fn triangulate_polygon(vertices: &[Vec2]) -> Vec<[Vec2; 3]> {
     let count = vertices.len();
     if count < 3 {
@@ -198,5 +214,13 @@ mod tests {
         let (min, max) = polygon_bounds(&poly).expect("bounds");
         assert_eq!(min, vec2(-2.0, -1.0));
         assert_eq!(max, vec2(5.0, 4.0));
+    }
+
+    #[test]
+    fn line_points_includes_endpoints() {
+        let pts = line_points(vec2(0.0, 0.0), vec2(10.0, 0.0), 5.0);
+        assert_eq!(pts.first(), Some(&vec2(0.0, 0.0)));
+        assert_eq!(pts.last(), Some(&vec2(10.0, 0.0)));
+        assert!(pts.len() >= 2);
     }
 }

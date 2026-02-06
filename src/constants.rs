@@ -42,7 +42,6 @@ pub const FLAGIC_GAIN_RATE: f32 = 5.0;
 pub const REGION_NOTICE_DURATION: f32 = 4.0;
 pub const REGION_NOTICE_FADE: f32 = 0.5;
 pub const REGION_NOTICE_SIZE: f32 = 54.0;
-pub const T3MPCAMP_CAMPFIRE_POS: Vec2 = Vec2::new(4982.0, 3233.0);
 pub const HIPPIE_STEAL_RADIUS: f32 = 36.0 * scale::MODEL_SCALE;
 pub const HIPPIE_ANGER_DURATION: f32 = 15.0;
 pub const HIPPIE_ANGER_RADIUS: f32 = 80.0 * scale::MODEL_SCALE;
@@ -60,21 +59,4 @@ pub const CAMERA_ZOOM_STEP: f32 = 0.1;
 pub const MAP_TILE_DIR: &str = "assets/map/tiles";
 pub const MAP_TRAVEL_MINUTES: f32 = 10.0;
 pub const SPEED_MULTIPLIER: f32 = 4.0;
-pub const MAP_REGION_COLOR: Color = Color::new(0.1, 0.6, 0.2, 1.0);
-pub const GEORGIA_PEANUTS_REGION_COLOR: Color = Color::new(0.12, 0.55, 0.24, 1.0);
 pub const PLAYER_SPAWN_POS: Vec2 = Vec2::new(5015.0, 3292.0);
-pub const T3MPCAMP_NAME: &str = "t3mpcamp";
-pub const T3MPCAMP_VERTICES: [Vec2; 5] = [
-    Vec2::new(4858.0, 3168.0),
-    Vec2::new(5042.0, 3107.0),
-    Vec2::new(5123.0, 3345.0),
-    Vec2::new(5054.0, 3367.0),
-    Vec2::new(4911.0, 3322.0),
-];
-pub const GEORGIA_PEANUTS_NAME: &str = "Georgia Peanuts";
-pub const GEORGIA_PEANUTS_VERTICES: [Vec2; 4] = [
-    Vec2::new(5123.0, 3345.0),
-    Vec2::new(5042.0, 3107.0),
-    Vec2::new(5255.0, 3037.0),
-    Vec2::new(5329.0, 3274.0),
-];
