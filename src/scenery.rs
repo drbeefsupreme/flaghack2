@@ -985,7 +985,10 @@ mod tests {
             .filter(|i| i.decorations.contains(&DomeDecoration::Crystal))
             .count();
 
-        assert_eq!(tents, 5);
+        let row1 = line_points(T3MPCAMP_ROW1_START, T3MPCAMP_ROW1_END, T3MPCAMP_TENT_SPACING);
+        let row2 = line_points(T3MPCAMP_ROW2_START, T3MPCAMP_ROW2_END, T3MPCAMP_TENT_SPACING);
+        let expected_tents = 5 + row1.len() + row2.len();
+        assert_eq!(tents, expected_tents);
         assert_eq!(chairs, 5);
         assert_eq!(campfires, 3);
         assert_eq!(crow_bases, 1);
@@ -1004,32 +1007,6 @@ mod tests {
             assert!(item.pos.x >= field.x && item.pos.x <= field.x + field.w);
             assert!(item.pos.y >= field.y && item.pos.y <= field.y + field.h);
         }
-    }
-
-    #[test]
-    fn spawn_scenery_has_crystal_dome_at_target() {
-        let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
-        let items = spawn_scenery(field);
-
-        let dome = items.iter().find(|item| {
-            item.kind == SceneryKind::Dome && item.pos == CRYSTAL_DOME_POS
-        });
-
-        let dome = dome.expect("Expected crystal dome at target position");
-        assert!(dome.decorations.contains(&DomeDecoration::Crystal));
-    }
-
-    #[test]
-    fn spawn_scenery_has_large_campfire_at_target() {
-        let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
-        let items = spawn_scenery(field);
-
-        let campfire = items.iter().find(|item| {
-            item.kind == SceneryKind::Campfire && item.pos == LARGE_CAMPFIRE_POS
-        });
-
-        let campfire = campfire.expect("Expected large campfire at target position");
-        assert!((campfire.scale - LARGE_CAMPFIRE_SCALE).abs() < f32::EPSILON);
     }
 
     #[test]

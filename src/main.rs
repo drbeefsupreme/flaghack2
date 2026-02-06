@@ -28,10 +28,14 @@ const LEY_MAX_DISTANCE: f32 = 150.0;
 const LEY_COLOR_PURPLE: Color = Color::new(0.55, 0.25, 0.95, 1.0);
 const LEY_COLOR_PINK: Color = Color::new(1.0, 0.35, 0.75, 1.0);
 const LEY_COLOR_CYCLE_SPEED: f32 = 0.9;
+const PENTAGRAM_COLOR_RED: Color = Color::new(1.0, 0.15, 0.05, 1.0);
+const PENTAGRAM_COLOR_ORANGE: Color = Color::new(1.0, 0.55, 0.0, 1.0);
+const PENTAGRAM_COLOR_CYCLE_SPEED: f32 = 1.2;
 const LEY_SPARKLE_SPEED: f32 = 3.5;
 const LEY_SPARKLE_STRENGTH: f32 = 0.35;
 const LEY_SPARKLE_SPATIAL: f32 = 0.02;
 const LEY_MIN_ALPHA: f32 = 0.05;
+const PENTAGRAM_MIN_ALPHA: f32 = 0.12;
 const CAMERA_ZOOM_MIN: f32 = camera::DEFAULT_ZOOM * 0.25;
 const CAMERA_ZOOM_MAX: f32 = camera::DEFAULT_ZOOM * 2.0;
 const CAMERA_ZOOM_STEP: f32 = 0.1;
@@ -342,26 +346,58 @@ fn draw_hud(flag_count: u32, speed: f32, player_pos: Vec2) {
 
 fn draw_ley_lines(lines: &[ley_lines::LeyLine], time: f32) {
     let cycle = 0.5 + 0.5 * (time * LEY_COLOR_CYCLE_SPEED).sin();
+    let pent_cycle = 0.5 + 0.5 * (time * PENTAGRAM_COLOR_CYCLE_SPEED).sin();
     for line in lines {
         let sparkle_phase = (line.a.x + line.b.y) * LEY_SPARKLE_SPATIAL;
         let sparkle = 0.5 + 0.5 * (time * LEY_SPARKLE_SPEED + sparkle_phase).sin();
-        let sparkle_mix = sparkle * LEY_SPARKLE_STRENGTH;
+        let (base_a, base_b, cycle_t, sparkle_strength, min_alpha, width_base, width_scale, sat_base, sat_scale, bright_base, bright_scale, highlight) =
+            match line.kind {
+                ley_lines::LeyLineKind::Pentagram => (
+                    PENTAGRAM_COLOR_RED,
+                    PENTAGRAM_COLOR_ORANGE,
+                    pent_cycle,
+                    0.6,
+                    PENTAGRAM_MIN_ALPHA,
+                    1.8,
+                    4.0,
+                    0.9,
+                    0.8,
+                    0.9,
+                    0.7,
+                    Color::new(1.0, 0.9, 0.65, 1.0),
+                ),
+                ley_lines::LeyLineKind::Normal => (
+                    LEY_COLOR_PURPLE,
+                    LEY_COLOR_PINK,
+                    cycle,
+                    LEY_SPARKLE_STRENGTH,
+                    LEY_MIN_ALPHA,
+                    1.0,
+                    3.0,
+                    0.6,
+                    0.6,
+                    0.7,
+                    0.5,
+                    Color::new(1.0, 0.85, 1.0, 1.0),
+                ),
+            };
 
-        let base = lerp_color(LEY_COLOR_PURPLE, LEY_COLOR_PINK, cycle);
-        let mut color = lerp_color(base, Color::new(1.0, 0.85, 1.0, 1.0), sparkle_mix);
+        let sparkle_mix = sparkle * sparkle_strength;
+        let base = lerp_color(base_a, base_b, cycle_t);
+        let mut color = lerp_color(base, highlight, sparkle_mix);
 
-        let saturation = 0.6 + 0.6 * line.intensity;
+        let saturation = sat_base + sat_scale * line.intensity;
         color = saturate_color(color, saturation);
-        let brightness = (0.7 + 0.5 * line.intensity).min(1.2);
+        let brightness = (bright_base + bright_scale * line.intensity).min(1.35);
         color.r = (color.r * brightness).min(1.0);
         color.g = (color.g * brightness).min(1.0);
         color.b = (color.b * brightness).min(1.0);
 
-        let alpha = (LEY_MIN_ALPHA + (1.0 - LEY_MIN_ALPHA) * line.intensity).clamp(0.0, 1.0);
+        let alpha = (min_alpha + (1.0 - min_alpha) * line.intensity).clamp(0.0, 1.0);
         let alpha = (alpha * (0.85 + 0.15 * sparkle)).clamp(0.0, 1.0);
         color.a = alpha;
 
-        let width = scale::scaled(1.0 + 3.0 * line.intensity);
+        let width = scale::scaled(width_base + width_scale * line.intensity);
         draw_line(line.a.x, line.a.y, line.b.x, line.b.y, width, color);
     }
 }
