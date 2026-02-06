@@ -45,13 +45,30 @@ struct Game {
     sparkle_spawn_counter: u32,
     flagic: u8,
     flagic_accum: f32,
-    t3mpcamp_inside: bool,
-    t3mpcamp_notice_timer: f32,
+    region_notices: Vec<RegionNotice>,
     hippies: Vec<npc::Hippie>,
     map: map::TileMap,
     map_regions: Vec<map::MapRegion>,
     camera: camera::CameraState,
     player_speed: f32,
+}
+
+struct RegionNotice {
+    region_name: &'static str,
+    text: &'static str,
+    inside: bool,
+    timer: f32,
+}
+
+impl RegionNotice {
+    fn new(region_name: &'static str, text: &'static str) -> Self {
+        Self {
+            region_name,
+            text,
+            inside: false,
+            timer: -1.0,
+        }
+    }
 }
 
 struct Assets {
@@ -63,12 +80,15 @@ impl Game {
     fn new() -> Self {
         let map = map::TileMap::load_from_dir(MAP_TILE_DIR);
         let field_rect = map.field_rect();
-        // t3mpcamp: special camp area region (hand-authored polygon).
-        let map_regions = vec![map::MapRegion::new(
-            T3MPCAMP_NAME,
-            T3MPCAMP_VERTICES.to_vec(),
-            MAP_REGION_COLOR,
-        )];
+        // t3mpcamp + Georgia Peanuts: special camp area regions (hand-authored polygons).
+        let map_regions = vec![
+            map::MapRegion::new(T3MPCAMP_NAME, T3MPCAMP_VERTICES.to_vec(), MAP_REGION_COLOR),
+            map::MapRegion::new(
+                GEORGIA_PEANUTS_NAME,
+                GEORGIA_PEANUTS_VERTICES.to_vec(),
+                GEORGIA_PEANUTS_REGION_COLOR,
+            ),
+        ];
         let hippie_spawns = [
             (T3MPCAMP_CAMPFIRE_POS + vec2(-28.0, -16.0), 0),
             (T3MPCAMP_CAMPFIRE_POS + vec2(26.0, 14.0), 0),
@@ -76,6 +96,10 @@ impl Game {
             (T3MPCAMP_CAMPFIRE_POS + vec2(18.0, -24.0), 2),
         ];
         let hippies = npc::spawn_hippies_with_flags(&hippie_spawns, &T3MPCAMP_VERTICES);
+        let region_notices = vec![
+            RegionNotice::new(T3MPCAMP_NAME, "t3mpcamp.com"),
+            RegionNotice::new(GEORGIA_PEANUTS_NAME, "Georgia Peanuts"),
+        ];
         let ground_flags = flags::spawn_random_flags(
             FLAG_COUNT_START,
             field_rect,
@@ -112,8 +136,7 @@ impl Game {
             sparkle_spawn_counter: 0,
             flagic: 0,
             flagic_accum: 0.0,
-            t3mpcamp_inside: false,
-            t3mpcamp_notice_timer: -1.0,
+            region_notices,
             hippies,
             map,
             map_regions,
@@ -235,7 +258,7 @@ fn render_dungeon(game: &mut Game) {
     let dt = get_frame_time();
     let player_center = game.player.pos
         + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
-    update_t3mpcamp_notice(game, player_center, dt);
+    update_region_notices(game, player_center, dt);
     let hippies_picked = npc::update_hippies(
         &mut game.hippies,
         dt,
@@ -278,7 +301,7 @@ fn render_dungeon(game: &mut Game) {
     );
 
     set_default_camera();
-    draw_t3mpcamp_notice(game);
+    draw_region_notices(game);
     draw_centered("FLAGHACK2", 60.0, 64.0, ACCENT);
     draw_centered("WASD to move", 110.0, 20.0, ACCENT);
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
@@ -473,52 +496,85 @@ fn recompute_ley_state(game: &mut Game) {
     game.pentagram_centers = state.pentagram_centers;
 }
 
-fn update_t3mpcamp_notice(game: &mut Game, player_center: Vec2, dt: f32) {
-    let in_region = game
-        .map_regions
-        .iter()
-        .filter(|region| region.name == T3MPCAMP_NAME)
-        .any(|region| region.contains_point(player_center));
-
-    if in_region && !game.t3mpcamp_inside {
-        game.t3mpcamp_notice_timer = 0.0;
+fn update_region_notices(game: &mut Game, player_center: Vec2, dt: f32) {
+    let mut now_inside = Vec::with_capacity(game.region_notices.len());
+    for notice in &game.region_notices {
+        let in_region = game
+            .map_regions
+            .iter()
+            .filter(|region| region.name == notice.region_name)
+            .any(|region| region.contains_point(player_center));
+        now_inside.push(in_region);
     }
 
-    game.t3mpcamp_inside = in_region;
+    update_region_notice_states(&mut game.region_notices, &now_inside, dt);
+}
 
-    if game.t3mpcamp_notice_timer >= 0.0 {
-        game.t3mpcamp_notice_timer += dt;
-        if game.t3mpcamp_notice_timer > T3MPCAMP_NOTICE_DURATION {
-            game.t3mpcamp_notice_timer = -1.0;
+fn draw_region_notices(game: &Game) {
+    for notice in &game.region_notices {
+        if notice.timer < 0.0 {
+            continue;
+        }
+        let alpha = region_notice_alpha(notice.timer);
+        if alpha <= 0.0 {
+            continue;
+        }
+        let mut color = ACCENT;
+        color.a = alpha;
+        draw_centered(notice.text, screen_height() * 0.5, REGION_NOTICE_SIZE, color);
+    }
+}
+
+fn update_region_notice_states(
+    notices: &mut [RegionNotice],
+    now_inside: &[bool],
+    dt: f32,
+) {
+    debug_assert_eq!(notices.len(), now_inside.len());
+
+    let mut entered_index = None;
+    for (i, notice) in notices.iter().enumerate() {
+        if now_inside[i] && !notice.inside {
+            entered_index = Some(i);
+            break;
+        }
+    }
+
+    if let Some(index) = entered_index {
+        for (i, notice) in notices.iter_mut().enumerate() {
+            notice.inside = now_inside[i];
+            if i == index {
+                notice.timer = 0.0;
+            } else {
+                notice.timer = -1.0;
+            }
+        }
+        return;
+    }
+
+    for (i, notice) in notices.iter_mut().enumerate() {
+        notice.inside = now_inside[i];
+        if notice.timer >= 0.0 {
+            notice.timer += dt;
+            if notice.timer > REGION_NOTICE_DURATION {
+                notice.timer = -1.0;
+            }
         }
     }
 }
 
-fn draw_t3mpcamp_notice(game: &Game) {
-    if game.t3mpcamp_notice_timer < 0.0 {
-        return;
-    }
-    let alpha = t3mpcamp_notice_alpha(game.t3mpcamp_notice_timer);
-    if alpha <= 0.0 {
-        return;
-    }
-    let mut color = ACCENT;
-    color.a = alpha;
-    draw_centered("t3mpcamp.com", screen_height() * 0.5, T3MPCAMP_NOTICE_SIZE, color);
-}
-
-fn t3mpcamp_notice_alpha(elapsed: f32) -> f32 {
-    if elapsed < 0.0 || elapsed > T3MPCAMP_NOTICE_DURATION {
+fn region_notice_alpha(elapsed: f32) -> f32 {
+    if elapsed < 0.0 || elapsed > REGION_NOTICE_DURATION {
         return 0.0;
     }
 
-    if elapsed < T3MPCAMP_NOTICE_FADE {
-        return (elapsed / T3MPCAMP_NOTICE_FADE).clamp(0.0, 1.0);
+    if elapsed < REGION_NOTICE_FADE {
+        return (elapsed / REGION_NOTICE_FADE).clamp(0.0, 1.0);
     }
 
-    if elapsed > T3MPCAMP_NOTICE_DURATION - T3MPCAMP_NOTICE_FADE {
-        let remaining = T3MPCAMP_NOTICE_DURATION - elapsed;
-        return (remaining / T3MPCAMP_NOTICE_FADE).clamp(0.0, 1.0);
+    if elapsed > REGION_NOTICE_DURATION - REGION_NOTICE_FADE {
+        let remaining = REGION_NOTICE_DURATION - elapsed;
+        return (remaining / REGION_NOTICE_FADE).clamp(0.0, 1.0);
     }
 
     1.0
@@ -809,13 +865,29 @@ mod tests {
     }
 
     #[test]
-    fn t3mpcamp_notice_alpha_fades_in_and_out() {
-        assert!(t3mpcamp_notice_alpha(0.0) <= 1e-6);
-        assert!((t3mpcamp_notice_alpha(0.25) - 0.5).abs() < 1e-4);
-        assert!((t3mpcamp_notice_alpha(0.5) - 1.0).abs() < 1e-6);
-        assert!((t3mpcamp_notice_alpha(3.5) - 1.0).abs() < 1e-6);
-        assert!((t3mpcamp_notice_alpha(3.75) - 0.5).abs() < 1e-4);
-        assert!(t3mpcamp_notice_alpha(4.0) <= 1e-6);
+    fn region_notice_alpha_fades_in_and_out() {
+        assert!(region_notice_alpha(0.0) <= 1e-6);
+        assert!((region_notice_alpha(0.25) - 0.5).abs() < 1e-4);
+        assert!((region_notice_alpha(0.5) - 1.0).abs() < 1e-6);
+        assert!((region_notice_alpha(3.5) - 1.0).abs() < 1e-6);
+        assert!((region_notice_alpha(3.75) - 0.5).abs() < 1e-4);
+        assert!(region_notice_alpha(4.0) <= 1e-6);
+    }
+
+    #[test]
+    fn region_notice_switches_on_new_entry() {
+        let mut notices = vec![
+            RegionNotice::new("a", "A"),
+            RegionNotice::new("b", "B"),
+        ];
+
+        update_region_notice_states(&mut notices, &[true, false], 0.1);
+        assert_eq!(notices[0].timer, 0.0);
+        assert!(notices[1].timer < 0.0);
+
+        update_region_notice_states(&mut notices, &[false, true], 0.1);
+        assert!(notices[0].timer < 0.0);
+        assert_eq!(notices[1].timer, 0.0);
     }
 
     #[test]
