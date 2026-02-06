@@ -36,6 +36,16 @@ const LEY_SPARKLE_STRENGTH: f32 = 0.35;
 const LEY_SPARKLE_SPATIAL: f32 = 0.02;
 const LEY_MIN_ALPHA: f32 = 0.05;
 const PENTAGRAM_MIN_ALPHA: f32 = 0.12;
+const PENTAGRAM_CENTER_RADIUS: f32 = 32.0 * scale::MODEL_SCALE;
+const PENTAGRAM_SPARKLE_SPAWN_RATE: f32 = 60.0;
+const PENTAGRAM_SPARKLE_MIN_ALPHA: f32 = 0.5;
+const PENTAGRAM_SPARKLE_MAX_ALPHA: f32 = 0.95;
+const PENTAGRAM_SPARKLE_MIN_SPEED: f32 = 40.0 * scale::MODEL_SCALE;
+const PENTAGRAM_SPARKLE_MAX_SPEED: f32 = 160.0 * scale::MODEL_SCALE;
+const PENTAGRAM_SPARKLE_MIN_RADIUS: f32 = 2.0 * scale::MODEL_SCALE;
+const PENTAGRAM_SPARKLE_MIN_MAX_RADIUS: f32 = 60.0 * scale::MODEL_SCALE;
+const PENTAGRAM_SPARKLE_MAX_RADIUS_FACTOR: f32 = 0.9;
+const PENTAGRAM_SPARKLE_HUE_SPEED: f32 = 0.35;
 const CAMERA_ZOOM_MIN: f32 = camera::DEFAULT_ZOOM * 0.25;
 const CAMERA_ZOOM_MAX: f32 = camera::DEFAULT_ZOOM * 2.0;
 const CAMERA_ZOOM_STEP: f32 = 0.1;
@@ -75,6 +85,10 @@ struct Game {
     wind: flags::Wind,
     scenery: Vec<scenery::SceneryItem>,
     ley_lines: Vec<ley_lines::LeyLine>,
+    pentagram_centers: Vec<Vec2>,
+    pentagram_sparkles: Vec<PentagramSparkle>,
+    sparkle_spawn_accum: f32,
+    sparkle_spawn_counter: u32,
     map: map::TileMap,
     map_regions: Vec<map::MapRegion>,
     camera: camera::CameraState,
@@ -102,6 +116,7 @@ impl Game {
             40.0 * scale::MODEL_SCALE,
         );
         let ley_lines = ley_lines::compute_ley_lines(&flags, LEY_MAX_DISTANCE);
+        let pentagram_centers = ley_lines::pentagram_centers(&flags, LEY_MAX_DISTANCE);
         let player_speed = map::adjusted_travel_speed(
             map.width,
             map.height,
@@ -120,6 +135,10 @@ impl Game {
             wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
             scenery: scenery::spawn_scenery(field_rect),
             ley_lines,
+            pentagram_centers,
+            pentagram_sparkles: Vec::new(),
+            sparkle_spawn_accum: 0.0,
+            sparkle_spawn_counter: 0,
             map,
             map_regions,
             camera: camera::CameraState::new(),
@@ -237,6 +256,7 @@ fn render_dungeon(game: &mut Game) {
     handle_flag_interactions(game);
 
     let time = get_time() as f32;
+    let dt = get_frame_time();
     let camera = build_camera(game);
     let view_rect = camera_view_rect(game, camera.target);
     set_camera(&camera);
@@ -252,6 +272,18 @@ fn render_dungeon(game: &mut Game) {
     }
 
     player::draw_player(game.player.pos, ACCENT, game.player.facing);
+    let player_center = game.player.pos
+        + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
+    update_pentagram_sparkles(
+        &mut game.pentagram_sparkles,
+        &mut game.sparkle_spawn_accum,
+        &mut game.sparkle_spawn_counter,
+        player_center,
+        player_in_pentagram(player_center, &game.pentagram_centers),
+        time,
+        dt,
+        view_rect,
+    );
 
     set_default_camera();
     draw_centered("FLAGHACK2", 60.0, 64.0, ACCENT);
@@ -300,6 +332,7 @@ fn handle_flag_interactions(game: &mut Game) {
         );
         if placed {
             game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
+            game.pentagram_centers = ley_lines::pentagram_centers(&game.flags, LEY_MAX_DISTANCE);
             return;
         }
     }
@@ -308,6 +341,7 @@ fn handle_flag_interactions(game: &mut Game) {
         if flags::try_pickup_flag(&mut game.flags, game.player.pos, FLAG_INTERACT_RADIUS) {
             game.flag_inventory = game.flag_inventory.saturating_add(1);
             game.ley_lines = ley_lines::compute_ley_lines(&game.flags, LEY_MAX_DISTANCE);
+            game.pentagram_centers = ley_lines::pentagram_centers(&game.flags, LEY_MAX_DISTANCE);
         }
     }
 }
@@ -400,6 +434,169 @@ fn draw_ley_lines(lines: &[ley_lines::LeyLine], time: f32) {
         let width = scale::scaled(width_base + width_scale * line.intensity);
         draw_line(line.a.x, line.a.y, line.b.x, line.b.y, width, color);
     }
+}
+
+fn player_in_pentagram(pos: Vec2, centers: &[Vec2]) -> bool {
+    centers
+        .iter()
+        .any(|center| center.distance(pos) <= PENTAGRAM_CENTER_RADIUS)
+}
+
+fn update_pentagram_sparkles(
+    sparkles: &mut Vec<PentagramSparkle>,
+    spawn_accum: &mut f32,
+    spawn_counter: &mut u32,
+    origin: Vec2,
+    in_pentagram: bool,
+    time: f32,
+    dt: f32,
+    view: Rect,
+) {
+    if in_pentagram {
+        spawn_pentagram_sparkles(
+            sparkles,
+            spawn_accum,
+            spawn_counter,
+            origin,
+            time,
+            dt,
+            sparkle_max_radius(view),
+        );
+    }
+
+    sparkles.retain(|sparkle| {
+        let radius = sparkle_radius(sparkle, time);
+        if radius > sparkle.max_radius {
+            return false;
+        }
+        let pos = sparkle.origin + sparkle.dir * radius;
+        let mut color = sparkle_color(sparkle, time, radius);
+        color.a = sparkle_alpha(sparkle.base_alpha, radius, sparkle.max_radius);
+        draw_circle(pos.x, pos.y, sparkle.size, color);
+        true
+    });
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PentagramSparkle {
+    origin: Vec2,
+    dir: Vec2,
+    speed: f32,
+    size: f32,
+    hue_seed: f32,
+    base_alpha: f32,
+    spawn_time: f32,
+    max_radius: f32,
+}
+
+fn spawn_pentagram_sparkles(
+    sparkles: &mut Vec<PentagramSparkle>,
+    spawn_accum: &mut f32,
+    spawn_counter: &mut u32,
+    origin: Vec2,
+    time: f32,
+    dt: f32,
+    max_radius: f32,
+) {
+    let count = sparkle_spawn_count(spawn_accum, dt, PENTAGRAM_SPARKLE_SPAWN_RATE);
+    for _ in 0..count {
+        let sparkle = create_pentagram_sparkle(*spawn_counter, origin, time, max_radius);
+        *spawn_counter = spawn_counter.wrapping_add(1);
+        sparkles.push(sparkle);
+    }
+}
+
+fn sparkle_spawn_count(accum: &mut f32, dt: f32, rate: f32) -> usize {
+    *accum += dt * rate;
+    let count = accum.floor() as usize;
+    *accum -= count as f32;
+    count
+}
+
+fn create_pentagram_sparkle(
+    seed: u32,
+    origin: Vec2,
+    time: f32,
+    max_radius: f32,
+) -> PentagramSparkle {
+    let s = seed as f32;
+    let angle = hash11(s + 3.7) * std::f32::consts::TAU;
+    let dir = vec2(angle.cos(), angle.sin());
+    let speed = lerp(
+        PENTAGRAM_SPARKLE_MIN_SPEED,
+        PENTAGRAM_SPARKLE_MAX_SPEED,
+        hash11(s + 9.1),
+    );
+    let size = (1.0 + 2.0 * hash11(s + 11.2)) * scale::MODEL_SCALE;
+    let base_alpha = lerp(
+        PENTAGRAM_SPARKLE_MIN_ALPHA,
+        PENTAGRAM_SPARKLE_MAX_ALPHA,
+        hash11(s + 5.7),
+    );
+    let hue_seed = hash11(s * 7.13);
+    let max_radius = max_radius.max(PENTAGRAM_SPARKLE_MIN_RADIUS);
+
+    PentagramSparkle {
+        origin,
+        dir,
+        speed,
+        size,
+        hue_seed,
+        base_alpha,
+        spawn_time: time,
+        max_radius,
+    }
+}
+
+fn sparkle_radius(sparkle: &PentagramSparkle, time: f32) -> f32 {
+    ((time - sparkle.spawn_time) * sparkle.speed).max(0.0)
+}
+
+fn sparkle_alpha(base_alpha: f32, radius: f32, max_radius: f32) -> f32 {
+    let fade = (1.0 - radius / max_radius).clamp(0.0, 1.0);
+    base_alpha * fade
+}
+
+fn sparkle_color(sparkle: &PentagramSparkle, time: f32, radius: f32) -> Color {
+    let hue = (sparkle.hue_seed
+        + time * PENTAGRAM_SPARKLE_HUE_SPEED
+        + radius / sparkle.max_radius * 0.5)
+        % 1.0;
+    hsv_to_rgb(hue, 0.9, 1.0)
+}
+
+fn sparkle_max_radius(view: Rect) -> f32 {
+    let diag = (view.w * view.w + view.h * view.h).sqrt();
+    (diag * PENTAGRAM_SPARKLE_MAX_RADIUS_FACTOR).max(PENTAGRAM_SPARKLE_MIN_MAX_RADIUS)
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t.clamp(0.0, 1.0)
+}
+
+fn hash11(mut x: f32) -> f32 {
+    x = (x * 12.9898).sin() * 43758.5453;
+    x.fract().abs()
+}
+
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> Color {
+    let h = (h % 1.0 + 1.0) % 1.0;
+    let s = s.clamp(0.0, 1.0);
+    let v = v.clamp(0.0, 1.0);
+    let i = (h * 6.0).floor();
+    let f = h * 6.0 - i;
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - f * s);
+    let t = v * (1.0 - (1.0 - f) * s);
+    let (r, g, b) = match i as i32 % 6 {
+        0 => (v, t, p),
+        1 => (q, v, p),
+        2 => (p, v, t),
+        3 => (p, q, v),
+        4 => (t, p, v),
+        _ => (v, p, q),
+    };
+    Color::new(r, g, b, 1.0)
 }
 
 fn lerp_color(a: Color, b: Color, t: f32) -> Color {
@@ -502,5 +699,40 @@ mod tests {
         assert!((mid.g - 0.4).abs() < 1e-6);
         assert!((mid.b - 0.3).abs() < 1e-6);
         assert!((mid.a - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn player_in_pentagram_center_respects_radius() {
+        let centers = vec![vec2(0.0, 0.0)];
+        assert!(player_in_pentagram(vec2(PENTAGRAM_CENTER_RADIUS * 0.5, 0.0), &centers));
+        assert!(!player_in_pentagram(
+            vec2(PENTAGRAM_CENTER_RADIUS * 1.1, 0.0),
+            &centers
+        ));
+    }
+
+    #[test]
+    fn sparkle_spawn_count_accumulates() {
+        let mut accum = 0.0;
+        let count = sparkle_spawn_count(&mut accum, 0.5, 10.0);
+        assert_eq!(count, 5);
+        assert!((accum - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sparkle_alpha_fades_to_zero_at_max_radius() {
+        let alpha = sparkle_alpha(0.8, 100.0, 100.0);
+        assert!(alpha <= 1e-6);
+    }
+
+    #[test]
+    fn sparkle_color_changes_over_time() {
+        let sparkle = create_pentagram_sparkle(1, vec2(0.0, 0.0), 0.0, 200.0);
+        let radius_now = sparkle_radius(&sparkle, 0.2);
+        let radius_later = sparkle_radius(&sparkle, 0.8);
+        let now = sparkle_color(&sparkle, 0.2, radius_now);
+        let later = sparkle_color(&sparkle, 0.8, radius_later);
+        let delta = (now.r - later.r).abs() + (now.g - later.g).abs() + (now.b - later.b).abs();
+        assert!(delta > 1e-3);
     }
 }

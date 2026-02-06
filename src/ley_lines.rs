@@ -2,8 +2,8 @@ use macroquad::prelude::*;
 use crate::flags::Flag;
 use std::collections::HashSet;
 
-const PENTAGRAM_RADIUS_TOLERANCE: f32 = 0.25;
-const PENTAGRAM_ANGLE_TOLERANCE: f32 = 0.45;
+const PENTAGRAM_RADIUS_TOLERANCE: f32 = 0.45;
+const PENTAGRAM_ANGLE_TOLERANCE: f32 = 0.7;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LeyLineKind {
@@ -27,7 +27,8 @@ pub fn compute_ley_lines(flags: &[Flag], max_distance: f32) -> Vec<LeyLine> {
     }
 
     let max_d2 = max_distance * max_distance;
-    let pentagram_pairs = pentagram_pairs(flags, max_distance);
+    let pentagrams = find_pentagrams(flags, max_distance);
+    let pentagram_pairs = pentagram_pairs(&pentagrams);
 
     for i in 0..flags.len() {
         for j in (i + 1)..flags.len() {
@@ -56,10 +57,40 @@ pub fn compute_ley_lines(flags: &[Flag], max_distance: f32) -> Vec<LeyLine> {
     lines
 }
 
-fn pentagram_pairs(flags: &[Flag], max_distance: f32) -> HashSet<(usize, usize)> {
+pub fn pentagram_centers(flags: &[Flag], max_distance: f32) -> Vec<Vec2> {
+    find_pentagrams(flags, max_distance)
+        .into_iter()
+        .map(|pentagram| pentagram.center)
+        .collect()
+}
+
+struct Pentagram {
+    indices: [usize; 5],
+    center: Vec2,
+}
+
+fn pentagram_pairs(pentagrams: &[Pentagram]) -> HashSet<(usize, usize)> {
     let mut pairs = HashSet::new();
+    for pentagram in pentagrams {
+        for i in 0..5 {
+            for j in (i + 1)..5 {
+                let mut u = pentagram.indices[i];
+                let mut v = pentagram.indices[j];
+                if u > v {
+                    std::mem::swap(&mut u, &mut v);
+                }
+                pairs.insert((u, v));
+            }
+        }
+    }
+
+    pairs
+}
+
+fn find_pentagrams(flags: &[Flag], max_distance: f32) -> Vec<Pentagram> {
+    let mut pentagrams = Vec::new();
     if flags.len() < 5 {
-        return pairs;
+        return pentagrams;
     }
 
     for a in 0..flags.len() - 4 {
@@ -68,17 +99,8 @@ fn pentagram_pairs(flags: &[Flag], max_distance: f32) -> HashSet<(usize, usize)>
                 for d in (c + 1)..flags.len() - 1 {
                     for e in (d + 1)..flags.len() {
                         let indices = [a, b, c, d, e];
-                        if is_pentagram(indices, flags, max_distance) {
-                            for i in 0..5 {
-                                for j in (i + 1)..5 {
-                                    let mut u = indices[i];
-                                    let mut v = indices[j];
-                                    if u > v {
-                                        std::mem::swap(&mut u, &mut v);
-                                    }
-                                    pairs.insert((u, v));
-                                }
-                            }
+                        if let Some(center) = pentagram_center(indices, flags, max_distance) {
+                            pentagrams.push(Pentagram { indices, center });
                         }
                     }
                 }
@@ -86,10 +108,14 @@ fn pentagram_pairs(flags: &[Flag], max_distance: f32) -> HashSet<(usize, usize)>
         }
     }
 
-    pairs
+    pentagrams
 }
 
-fn is_pentagram(indices: [usize; 5], flags: &[Flag], max_distance: f32) -> bool {
+fn pentagram_center(
+    indices: [usize; 5],
+    flags: &[Flag],
+    max_distance: f32,
+) -> Option<Vec2> {
     let mut centroid = Vec2::ZERO;
     for idx in indices {
         centroid += flags[idx].pos;
@@ -114,11 +140,11 @@ fn is_pentagram(indices: [usize; 5], flags: &[Flag], max_distance: f32) -> bool 
 
     let mean_r = sum_r / 5.0;
     if mean_r <= f32::EPSILON {
-        return false;
+        return None;
     }
 
     if (max_r - min_r) / mean_r > PENTAGRAM_RADIUS_TOLERANCE {
-        return false;
+        return None;
     }
 
     points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
@@ -132,7 +158,7 @@ fn is_pentagram(indices: [usize; 5], flags: &[Flag], max_distance: f32) -> bool 
         };
         let diff = next_angle - angle;
         if (diff - expected).abs() > PENTAGRAM_ANGLE_TOLERANCE {
-            return false;
+            return None;
         }
     }
 
@@ -140,11 +166,11 @@ fn is_pentagram(indices: [usize; 5], flags: &[Flag], max_distance: f32) -> bool 
         let a = points[i].2;
         let b = points[(i + 2) % 5].2;
         if a.distance(b) > max_distance {
-            return false;
+            return None;
         }
     }
 
-    true
+    Some(centroid)
 }
 
 #[cfg(test)]
@@ -205,6 +231,41 @@ mod tests {
     }
 
     #[test]
+    fn pentagram_with_jittered_radius_is_detected() {
+        let base_radius = 60.0;
+        let mut flags = Vec::new();
+        for i in 0..5 {
+            let angle = i as f32 * std::f32::consts::TAU / 5.0;
+            let jitter = if i % 2 == 0 { 1.15 } else { 0.85 };
+            flags.push(Flag {
+                pos: vec2(angle.cos() * base_radius * jitter, angle.sin() * base_radius * jitter),
+                phase: 0.0,
+            });
+        }
+
+        let lines = compute_ley_lines(&flags, 150.0);
+        assert_eq!(lines.len(), 10);
+        assert!(lines.iter().all(|line| line.kind == LeyLineKind::Pentagram));
+    }
+
+    #[test]
+    fn pentagram_centers_returns_centroid() {
+        let radius = 50.0;
+        let mut flags = Vec::new();
+        for i in 0..5 {
+            let angle = i as f32 * std::f32::consts::TAU / 5.0;
+            flags.push(Flag {
+                pos: vec2(angle.cos() * radius, angle.sin() * radius),
+                phase: 0.0,
+            });
+        }
+
+        let centers = pentagram_centers(&flags, 100.0);
+        assert_eq!(centers.len(), 1);
+        assert!(centers[0].length() < 1e-4);
+    }
+
+    #[test]
     fn non_pentagram_does_not_mark_lines() {
         let flags = vec![
             Flag { pos: vec2(0.0, 0.0), phase: 0.0 },
@@ -215,5 +276,18 @@ mod tests {
         ];
         let lines = compute_ley_lines(&flags, 100.0);
         assert!(lines.iter().all(|line| line.kind == LeyLineKind::Normal));
+    }
+
+    #[test]
+    fn pentagram_centers_empty_for_non_pentagram() {
+        let flags = vec![
+            Flag { pos: vec2(0.0, 0.0), phase: 0.0 },
+            Flag { pos: vec2(10.0, 0.0), phase: 0.0 },
+            Flag { pos: vec2(20.0, 0.0), phase: 0.0 },
+            Flag { pos: vec2(30.0, 0.0), phase: 0.0 },
+            Flag { pos: vec2(40.0, 0.0), phase: 0.0 },
+        ];
+        let centers = pentagram_centers(&flags, 100.0);
+        assert!(centers.is_empty());
     }
 }
