@@ -15,7 +15,7 @@ mod npc;
 mod hud;
 mod geom;
 mod flag_state;
-mod regions;
+mod camps;
 
 use constants::*;
 
@@ -46,26 +46,26 @@ struct Game {
     sparkle_spawn_counter: u32,
     flagic: u8,
     flagic_accum: f32,
-    region_notices: Vec<RegionNotice>,
-    region_vertices: Vec<Vec<Vec2>>,
+    camp_notices: Vec<CampNotice>,
+    camp_vertices: Vec<Vec<Vec2>>,
     hippies: Vec<npc::Hippie>,
     map: map::TileMap,
-    map_regions: Vec<map::MapRegion>,
+    camp_regions: Vec<map::MapRegion>,
     camera: camera::CameraState,
     player_speed: f32,
 }
 
-struct RegionNotice {
-    region_name: &'static str,
+struct CampNotice {
+    camp_name: &'static str,
     text: &'static str,
     inside: bool,
     timer: f32,
 }
 
-impl RegionNotice {
-    fn new(region_name: &'static str, text: &'static str) -> Self {
+impl CampNotice {
+    fn new(camp_name: &'static str, text: &'static str) -> Self {
         Self {
-            region_name,
+            camp_name,
             text,
             inside: false,
             timer: -1.0,
@@ -82,34 +82,34 @@ impl Game {
     fn new() -> Self {
         let map = map::TileMap::load_from_dir(MAP_TILE_DIR);
         let field_rect = map.field_rect();
-        let region_configs = regions::region_configs();
-        let map_regions = region_configs
+        let camp_configs = camps::camp_configs();
+        let camp_regions = camp_configs
             .iter()
-            .map(|region| map::MapRegion::new(region.name, region.vertices.clone(), region.color))
+            .map(|camp| map::MapRegion::new(camp.name, camp.vertices.clone(), camp.color))
             .collect::<Vec<_>>();
-        let region_notices = region_configs
+        let camp_notices = camp_configs
             .iter()
-            .map(|region| RegionNotice::new(region.name, region.notice_text))
+            .map(|camp| CampNotice::new(camp.name, camp.notice_text))
             .collect::<Vec<_>>();
-        let region_vertices = regions::collect_region_vertices(&region_configs);
+        let camp_vertices = camps::collect_camp_vertices(&camp_configs);
         let mut hippies = Vec::new();
-        for (region_index, region) in region_configs.iter().enumerate() {
-            if !region.spawns.hippies.is_empty() {
+        for (camp_index, camp) in camp_configs.iter().enumerate() {
+            if !camp.spawns.hippies.is_empty() {
                 hippies.extend(npc::spawn_hippies(
-                    &region.spawns.hippies,
-                    region_index,
-                    &region.vertices,
+                    &camp.spawns.hippies,
+                    camp_index,
+                    &camp.vertices,
                 ));
             }
         }
-        let region_spawns = regions::collect_scenery_spawns(&region_configs);
+        let camp_spawns = camps::collect_scenery_spawns(&camp_configs);
         let ground_flags = flags::spawn_random_flags(
             FLAG_COUNT_START,
             field_rect,
             40.0 * scale::MODEL_SCALE,
         );
         let mut ground_flags = ground_flags;
-        for pos in regions::collect_flag_spawns(&region_configs) {
+        for pos in camps::collect_flag_spawns(&camp_configs) {
             ground_flags.push(flags::make_flag(pos));
         }
         let total_flags =
@@ -120,7 +120,7 @@ impl Game {
             total_flags,
         );
         let ley_state = ley_lines::compute_ley_state(flag_state.ground_flags(), LEY_MAX_DISTANCE);
-        let scenery = scenery::spawn_scenery(field_rect, &region_spawns);
+        let scenery = scenery::spawn_scenery(field_rect, &camp_spawns);
         let player_speed = map::adjusted_travel_speed(
             map.width,
             map.height,
@@ -144,11 +144,11 @@ impl Game {
             sparkle_spawn_counter: 0,
             flagic: 0,
             flagic_accum: 0.0,
-            region_notices,
-            region_vertices,
+            camp_notices,
+            camp_vertices,
             hippies,
             map,
-            map_regions,
+            camp_regions,
             camera: camera::CameraState::new(),
             player_speed,
         }
@@ -267,11 +267,11 @@ fn render_dungeon(game: &mut Game) {
     let dt = get_frame_time();
     let player_center = game.player.pos
         + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
-    update_region_notices(game, player_center, dt);
+    update_camp_notices(game, player_center, dt);
     let hippies_picked = npc::update_hippies(
         &mut game.hippies,
         dt,
-        &game.region_vertices,
+        &game.camp_vertices,
         &mut game.flag_state,
         player_center,
         game.player_speed,
@@ -285,8 +285,8 @@ fn render_dungeon(game: &mut Game) {
     set_camera(&camera);
 
     game.map.draw(view_rect);
-    for region in &game.map_regions {
-        region.draw();
+    for camp in &game.camp_regions {
+        camp.draw();
     }
     scenery::draw_scenery(&game.scenery, time);
     npc::draw_hippies(&game.hippies);
@@ -310,7 +310,7 @@ fn render_dungeon(game: &mut Game) {
     );
 
     set_default_camera();
-    draw_region_notices(game);
+    draw_camp_notices(game);
     draw_centered("FLAGHACK2", 60.0, 64.0, ACCENT);
     draw_centered("WASD to move", 110.0, 20.0, ACCENT);
     draw_centered("Esc to class select", 135.0, 20.0, ACCENT);
@@ -505,26 +505,26 @@ fn recompute_ley_state(game: &mut Game) {
     game.pentagram_centers = state.pentagram_centers;
 }
 
-fn update_region_notices(game: &mut Game, player_center: Vec2, dt: f32) {
-    let mut now_inside = Vec::with_capacity(game.region_notices.len());
-    for notice in &game.region_notices {
-        let in_region = game
-            .map_regions
+fn update_camp_notices(game: &mut Game, player_center: Vec2, dt: f32) {
+    let mut now_inside = Vec::with_capacity(game.camp_notices.len());
+    for notice in &game.camp_notices {
+        let in_camp = game
+            .camp_regions
             .iter()
-            .filter(|region| region.name == notice.region_name)
+            .filter(|region| region.name == notice.camp_name)
             .any(|region| region.contains_point(player_center));
-        now_inside.push(in_region);
+        now_inside.push(in_camp);
     }
 
-    update_region_notice_states(&mut game.region_notices, &now_inside, dt);
+    update_camp_notice_states(&mut game.camp_notices, &now_inside, dt);
 }
 
-fn draw_region_notices(game: &Game) {
-    for notice in &game.region_notices {
+fn draw_camp_notices(game: &Game) {
+    for notice in &game.camp_notices {
         if notice.timer < 0.0 {
             continue;
         }
-        let alpha = region_notice_alpha(notice.timer);
+        let alpha = camp_notice_alpha(notice.timer);
         if alpha <= 0.0 {
             continue;
         }
@@ -534,8 +534,8 @@ fn draw_region_notices(game: &Game) {
     }
 }
 
-fn update_region_notice_states(
-    notices: &mut [RegionNotice],
+fn update_camp_notice_states(
+    notices: &mut [CampNotice],
     now_inside: &[bool],
     dt: f32,
 ) {
@@ -572,7 +572,7 @@ fn update_region_notice_states(
     }
 }
 
-fn region_notice_alpha(elapsed: f32) -> f32 {
+fn camp_notice_alpha(elapsed: f32) -> f32 {
     if elapsed < 0.0 || elapsed > REGION_NOTICE_DURATION {
         return 0.0;
     }
@@ -874,27 +874,27 @@ mod tests {
     }
 
     #[test]
-    fn region_notice_alpha_fades_in_and_out() {
-        assert!(region_notice_alpha(0.0) <= 1e-6);
-        assert!((region_notice_alpha(0.25) - 0.5).abs() < 1e-4);
-        assert!((region_notice_alpha(0.5) - 1.0).abs() < 1e-6);
-        assert!((region_notice_alpha(3.5) - 1.0).abs() < 1e-6);
-        assert!((region_notice_alpha(3.75) - 0.5).abs() < 1e-4);
-        assert!(region_notice_alpha(4.0) <= 1e-6);
+    fn camp_notice_alpha_fades_in_and_out() {
+        assert!(camp_notice_alpha(0.0) <= 1e-6);
+        assert!((camp_notice_alpha(0.25) - 0.5).abs() < 1e-4);
+        assert!((camp_notice_alpha(0.5) - 1.0).abs() < 1e-6);
+        assert!((camp_notice_alpha(3.5) - 1.0).abs() < 1e-6);
+        assert!((camp_notice_alpha(3.75) - 0.5).abs() < 1e-4);
+        assert!(camp_notice_alpha(4.0) <= 1e-6);
     }
 
     #[test]
-    fn region_notice_switches_on_new_entry() {
+    fn camp_notice_switches_on_new_entry() {
         let mut notices = vec![
-            RegionNotice::new("a", "A"),
-            RegionNotice::new("b", "B"),
+            CampNotice::new("a", "A"),
+            CampNotice::new("b", "B"),
         ];
 
-        update_region_notice_states(&mut notices, &[true, false], 0.1);
+        update_camp_notice_states(&mut notices, &[true, false], 0.1);
         assert_eq!(notices[0].timer, 0.0);
         assert!(notices[1].timer < 0.0);
 
-        update_region_notice_states(&mut notices, &[false, true], 0.1);
+        update_camp_notice_states(&mut notices, &[false, true], 0.1);
         assert!(notices[0].timer < 0.0);
         assert_eq!(notices[1].timer, 0.0);
     }
@@ -928,7 +928,7 @@ mod tests {
 
     #[test]
     fn total_hippie_flags_sums_carried_flags() {
-        let region = [
+        let camp = [
             vec2(0.0, 0.0),
             vec2(10.0, 0.0),
             vec2(0.0, 10.0),
@@ -936,7 +936,7 @@ mod tests {
         let hippies = npc::spawn_hippies_with_flags(
             &[(vec2(1.0, 1.0), 1), (vec2(2.0, 2.0), 2)],
             0,
-            &region,
+            &camp,
         );
         assert_eq!(total_hippie_flags(&hippies), 3);
     }

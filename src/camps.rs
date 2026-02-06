@@ -4,16 +4,16 @@ use crate::geom;
 use crate::scenery::{ScenerySpawn, TENT_VARIANT_COUNT};
 
 #[derive(Clone, Debug)]
-pub struct RegionConfig {
+pub struct CampConfig {
     pub name: &'static str,
     pub vertices: Vec<Vec2>,
     pub color: Color,
     pub notice_text: &'static str,
-    pub spawns: RegionSpawns,
+    pub spawns: CampSpawns,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct RegionSpawns {
+pub struct CampSpawns {
     pub scenery: Vec<ScenerySpawn>,
     pub flags: Vec<Vec2>,
     pub hippies: Vec<Vec2>,
@@ -57,10 +57,10 @@ const DEBUSSY_BUS_VERTICES: [Vec2; 4] = [
     Vec2::new(4975.0, 3092.0),
 ];
 
-pub fn region_configs() -> Vec<RegionConfig> {
-    let mut regions = Vec::new();
+pub fn camp_configs() -> Vec<CampConfig> {
+    let mut camps = Vec::new();
 
-    regions.push(RegionConfig {
+    camps.push(CampConfig {
         name: T3MPCAMP_NAME,
         vertices: T3MPCAMP_VERTICES.to_vec(),
         color: T3MPCAMP_COLOR,
@@ -68,7 +68,7 @@ pub fn region_configs() -> Vec<RegionConfig> {
         spawns: t3mpcamp_spawns(),
     });
 
-    regions.push(RegionConfig {
+    camps.push(CampConfig {
         name: GEORGIA_PEANUTS_NAME,
         vertices: GEORGIA_PEANUTS_VERTICES.to_vec(),
         color: GEORGIA_PEANUTS_COLOR,
@@ -76,7 +76,7 @@ pub fn region_configs() -> Vec<RegionConfig> {
         spawns: georgia_peanuts_spawns(),
     });
 
-    regions.push(RegionConfig {
+    camps.push(CampConfig {
         name: DEBUSSY_BUS_NAME,
         vertices: DEBUSSY_BUS_VERTICES.to_vec(),
         color: DEBUSSY_BUS_COLOR,
@@ -84,31 +84,31 @@ pub fn region_configs() -> Vec<RegionConfig> {
         spawns: debussy_bus_spawns(),
     });
 
-    regions
+    camps
 }
 
-pub fn collect_scenery_spawns(regions: &[RegionConfig]) -> Vec<ScenerySpawn> {
+pub fn collect_scenery_spawns(camps: &[CampConfig]) -> Vec<ScenerySpawn> {
     let mut spawns = Vec::new();
-    for region in regions {
-        spawns.extend(region.spawns.scenery.iter().cloned());
+    for camp in camps {
+        spawns.extend(camp.spawns.scenery.iter().cloned());
     }
     spawns
 }
 
-pub fn collect_flag_spawns(regions: &[RegionConfig]) -> Vec<Vec2> {
+pub fn collect_flag_spawns(camps: &[CampConfig]) -> Vec<Vec2> {
     let mut flags = Vec::new();
-    for region in regions {
-        flags.extend(region.spawns.flags.iter().copied());
+    for camp in camps {
+        flags.extend(camp.spawns.flags.iter().copied());
     }
     flags
 }
 
-pub fn collect_region_vertices(regions: &[RegionConfig]) -> Vec<Vec<Vec2>> {
-    regions.iter().map(|region| region.vertices.clone()).collect()
+pub fn collect_camp_vertices(camps: &[CampConfig]) -> Vec<Vec<Vec2>> {
+    camps.iter().map(|camp| camp.vertices.clone()).collect()
 }
 
-fn t3mpcamp_spawns() -> RegionSpawns {
-    let mut spawns = RegionSpawns::default();
+fn t3mpcamp_spawns() -> CampSpawns {
+    let mut spawns = CampSpawns::default();
 
     spawns
         .scenery
@@ -138,8 +138,8 @@ fn t3mpcamp_spawns() -> RegionSpawns {
     spawns
 }
 
-fn georgia_peanuts_spawns() -> RegionSpawns {
-    let mut spawns = RegionSpawns::default();
+fn georgia_peanuts_spawns() -> CampSpawns {
+    let mut spawns = CampSpawns::default();
 
     spawns.scenery.extend([
         ScenerySpawn::campfire(vec2(5200.0, 3180.0), 1.0),
@@ -168,8 +168,8 @@ fn georgia_peanuts_spawns() -> RegionSpawns {
     spawns
 }
 
-fn debussy_bus_spawns() -> RegionSpawns {
-    let mut spawns = RegionSpawns::default();
+fn debussy_bus_spawns() -> CampSpawns {
+    let mut spawns = CampSpawns::default();
 
     spawns.scenery.extend([
         ScenerySpawn::campfire(vec2(4860.0, 3050.0), 1.0),
@@ -202,11 +202,11 @@ mod tests {
 
     #[test]
     fn georgia_peanuts_has_expected_spawns() {
-        let regions = region_configs();
-        let georgia = regions
+        let camps = camp_configs();
+        let georgia = camps
             .iter()
-            .find(|region| region.name == GEORGIA_PEANUTS_NAME)
-            .expect("Georgia Peanuts region");
+            .find(|camp| camp.name == GEORGIA_PEANUTS_NAME)
+            .expect("Georgia Peanuts camp");
 
         let campfires = georgia
             .spawns
@@ -236,11 +236,11 @@ mod tests {
 
     #[test]
     fn debussy_bus_has_expected_spawns() {
-        let regions = region_configs();
-        let bus = regions
+        let camps = camp_configs();
+        let bus = camps
             .iter()
-            .find(|region| region.name == DEBUSSY_BUS_NAME)
-            .expect("DeBussy Bus Station region");
+            .find(|camp| camp.name == DEBUSSY_BUS_NAME)
+            .expect("DeBussy Bus Station camp");
 
         let campfires = bus
             .spawns

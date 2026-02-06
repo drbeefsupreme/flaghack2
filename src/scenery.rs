@@ -106,7 +106,7 @@ const TENT_COLORS: [Color; 5] = [
 ];
 pub const TENT_VARIANT_COUNT: u8 = TENT_COLORS.len() as u8;
 
-pub fn spawn_scenery(field: Rect, region_spawns: &[ScenerySpawn]) -> Vec<SceneryItem> {
+pub fn spawn_scenery(field: Rect, camp_spawns: &[ScenerySpawn]) -> Vec<SceneryItem> {
     let mut items = Vec::new();
 
     let tents = [
@@ -228,7 +228,7 @@ pub fn spawn_scenery(field: Rect, region_spawns: &[ScenerySpawn]) -> Vec<Scenery
         });
     }
 
-    apply_spawns(&mut items, region_spawns);
+    apply_spawns(&mut items, camp_spawns);
 
     items
 }
@@ -967,15 +967,15 @@ fn rotate_point(point: Vec2, origin: Vec2, angle: f32) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::regions;
+    use crate::camps;
     use crate::player;
 
     #[test]
     fn spawn_scenery_has_expected_counts() {
         let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
-        let regions = regions::region_configs();
-        let region_spawns = regions::collect_scenery_spawns(&regions);
-        let items = spawn_scenery(field, &region_spawns);
+        let camps = camps::camp_configs();
+        let camp_spawns = camps::collect_scenery_spawns(&camps);
+        let items = spawn_scenery(field, &camp_spawns);
 
         let tents = items.iter().filter(|i| i.kind == SceneryKind::Tent).count();
         let chairs = items.iter().filter(|i| i.kind == SceneryKind::Chair).count();
@@ -993,22 +993,22 @@ mod tests {
             .filter(|i| i.decorations.contains(&DomeDecoration::Crystal))
             .count();
 
-        let region_tents = region_spawns
+        let camp_tents = camp_spawns
             .iter()
             .filter(|s| s.kind == SceneryKind::Tent)
             .count();
-        let region_chairs = region_spawns
+        let camp_chairs = camp_spawns
             .iter()
             .filter(|s| s.kind == SceneryKind::Chair)
             .count();
-        let region_campfires = region_spawns
+        let camp_campfires = camp_spawns
             .iter()
             .filter(|s| s.kind == SceneryKind::Campfire)
             .count();
 
-        assert_eq!(tents, 5 + region_tents);
-        assert_eq!(chairs, 5 + region_chairs);
-        assert_eq!(campfires, 2 + region_campfires);
+        assert_eq!(tents, 5 + camp_tents);
+        assert_eq!(chairs, 5 + camp_chairs);
+        assert_eq!(campfires, 2 + camp_campfires);
         assert_eq!(crow_bases, 1);
         assert_eq!(crows, 1);
         assert_eq!(trees, 5);
@@ -1019,9 +1019,9 @@ mod tests {
     #[test]
     fn spawn_scenery_within_field() {
         let field = Rect::new(0.0, 0.0, 10000.0, 7000.0);
-        let regions = regions::region_configs();
-        let region_spawns = regions::collect_scenery_spawns(&regions);
-        let items = spawn_scenery(field, &region_spawns);
+        let camps = camps::camp_configs();
+        let camp_spawns = camps::collect_scenery_spawns(&camps);
+        let items = spawn_scenery(field, &camp_spawns);
 
         for item in items {
             assert!(item.pos.x >= field.x && item.pos.x <= field.x + field.w);

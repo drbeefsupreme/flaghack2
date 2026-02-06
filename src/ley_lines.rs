@@ -75,10 +75,12 @@ pub fn compute_ley_state(flags: &[Flag], max_distance: f32) -> LeyState {
     }
 }
 
+#[cfg(test)]
 pub fn compute_ley_lines(flags: &[Flag], max_distance: f32) -> Vec<LeyLine> {
     compute_ley_state(flags, max_distance).lines
 }
 
+#[cfg(test)]
 pub fn pentagram_centers(flags: &[Flag], max_distance: f32) -> Vec<Vec2> {
     compute_ley_state(flags, max_distance).pentagram_centers
 }
