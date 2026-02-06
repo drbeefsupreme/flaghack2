@@ -165,7 +165,7 @@ pub fn update_hippies(
         };
         let step = speed * dt;
         let next_pos = if to_target.length() <= step || step <= 0.0 {
-            hippie.target
+            target
         } else {
             hippie.pos + to_target.normalize() * step
         };
@@ -914,5 +914,38 @@ mod tests {
     fn chase_speed_uses_player_speed_factor() {
         let speed = chase_speed(100.0);
         assert!((speed - 100.0 * constants::HIPPIE_CHASE_SPEED_FACTOR).abs() < 1e-6);
+    }
+
+    #[test]
+    fn angry_hippie_steps_to_player_not_wander_target() {
+        let square = vec![
+            vec2(0.0, 0.0),
+            vec2(200.0, 0.0),
+            vec2(200.0, 200.0),
+            vec2(0.0, 200.0),
+        ];
+        let mut hippies = spawn_hippies(&[vec2(50.0, 50.0)], &square);
+        hippies[0].angry = true;
+        hippies[0].anger_timer = constants::HIPPIE_ANGER_DURATION;
+        hippies[0].anger_delay = 0.0;
+        hippies[0].flee_timer = 0.0;
+        hippies[0].drop_check_timer = 0.0;
+        hippies[0].ignore_flags_timer = 0.0;
+        hippies[0].target = vec2(150.0, 150.0);
+
+        let mut flag_state = FlagState::new(Vec::new(), 0, 0);
+        let player_pos = vec2(60.0, 50.0);
+        update_hippies(
+            &mut hippies,
+            1.0,
+            &square,
+            &mut flag_state,
+            player_pos,
+            1000.0,
+        );
+
+        let dist_to_player = hippies[0].pos.distance(player_pos);
+        let dist_to_target = hippies[0].pos.distance(hippies[0].target);
+        assert!(dist_to_player < dist_to_target);
     }
 }
