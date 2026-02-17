@@ -2,9 +2,11 @@ use macroquad::prelude::*;
 
 use crate::constants;
 use crate::flag_state;
+use crate::flags;
 use crate::geom;
 use crate::player;
 use crate::scale;
+use crate::GameMode;
 
 const HIPPIE_SPEED: f32 = 18.0 * scale::MODEL_SCALE;
 const HIPPIE_TARGET_EPSILON: f32 = 4.0 * scale::MODEL_SCALE;
@@ -35,6 +37,9 @@ pub struct Hippie {
     target: Vec2,
     speed: f32,
     rng_state: u32,
+    pub flag_psychosis: f32,
+    pub drunkenness: f32,
+    pub dirtiness: f32,
 }
 
 pub fn try_steal_flag(
@@ -79,6 +84,9 @@ pub fn spawn_hippies(positions: &[Vec2], camp_index: usize, camp_vertices: &[Vec
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
+                flag_psychosis: 0.0,
+                drunkenness: 0.0,
+                dirtiness: 0.0,
             }
         })
         .collect()
@@ -110,6 +118,9 @@ pub fn spawn_hippies_with_flags(
                 target,
                 speed: HIPPIE_SPEED,
                 rng_state,
+                flag_psychosis: 0.0,
+                drunkenness: 0.0,
+                dirtiness: 0.0,
             }
         })
         .collect()
@@ -122,35 +133,98 @@ pub fn update_hippies(
     flag_state: &mut flag_state::FlagState,
     player_pos: Vec2,
     player_speed: f32,
+    mode: GameMode,
+    pentagram_centers: &[Vec2],
+    pentagram_blueprints: &[Vec<Vec2>],
+    time: f32,
 ) -> bool {
     let mut picked_any = false;
     let player_has_flags = flag_state.player_inventory() > 0;
     let mut desired_positions = Vec::with_capacity(hippies.len());
     let mut inside_camps = Vec::with_capacity(hippies.len());
     let mut angry_flags = Vec::with_capacity(hippies.len());
+    let mut pentagram_slots: Vec<Option<Vec2>> = Vec::with_capacity(hippies.len());
     for hippie in hippies.iter_mut() {
         let camp = camp_for_index(camp_vertices, hippie.camp_index);
         let inside_camp = geom::point_in_polygon(hippie.pos, camp);
         update_hippie_drop(hippie, dt, flag_state);
 
         if hippie.ignore_flags_timer <= 0.0 && hippie.carried_flags < HIPPIE_FLAG_CAPACITY {
+            let pickup_radius = if mode == GameMode::Burn {
+                drunk_vision_range(HIPPIE_FLAG_PICKUP_RADIUS, hippie.drunkenness)
+            } else {
+                HIPPIE_FLAG_PICKUP_RADIUS
+            };
             picked_any |= flag_state.transfer_ground_to_hippie(
                 &mut hippie.carried_flags,
                 HIPPIE_FLAG_CAPACITY,
                 hippie.pos,
-                HIPPIE_FLAG_PICKUP_RADIUS,
+                pickup_radius,
             );
         }
 
-        update_hippie_anger(hippie, player_pos, player_has_flags, dt);
+        // In Burn mode: psychosis-driven behavior instead of anger
+        let chasing_flag = if mode == GameMode::Burn {
+            update_hippie_psychosis(hippie, pentagram_centers, dt);
+
+            // Psychosis decay when entering camp with flags
+            if inside_camp && hippie.carried_flags > 0 {
+                hippie.flag_psychosis =
+                    (hippie.flag_psychosis - constants::PSYCHOSIS_CAMP_RETURN_DECAY * dt).max(0.0);
+            }
+
+            // Priority 1: Build pentagram when in camp with flags
+            let blueprint = camp_blueprint(pentagram_blueprints, hippie.camp_index);
+            if inside_camp && hippie.carried_flags > 0 && !blueprint.is_empty() {
+                if let Some(slot) =
+                    find_empty_pentagram_slot(blueprint, flag_state.ground_flags(), hippie.pos)
+                {
+                    hippie.target = slot;
+                    pentagram_slots.push(Some(slot));
+                    true
+                } else if let Some(flag_target) =
+                    psychosis_target(hippie, flag_state.ground_flags(), camp)
+                {
+                    hippie.target = flag_target;
+                    pentagram_slots.push(None);
+                    true
+                } else {
+                    pentagram_slots.push(None);
+                    false
+                }
+            } else {
+                // Not in camp or no flags - chase outside flags
+                if let Some(flag_target) =
+                    psychosis_target(hippie, flag_state.ground_flags(), camp)
+                {
+                    hippie.target = flag_target;
+                    pentagram_slots.push(None);
+                    true
+                } else {
+                    pentagram_slots.push(None);
+                    false
+                }
+            }
+        } else {
+            update_hippie_anger(hippie, player_pos, player_has_flags, dt);
+            pentagram_slots.push(None);
+            false
+        };
+
         update_hippie_flee(hippie, dt);
-        let angry = hippie.angry;
+        let angry = if mode == GameMode::Burn {
+            false
+        } else {
+            hippie.angry
+        };
 
         if angry && hippie.anger_delay <= 0.0 {
             steal_from_player(hippie, player_pos, flag_state, dt);
         }
 
-        if !angry && hippie.flee_timer <= 0.0 {
+        let pursuing = angry || chasing_flag;
+
+        if !pursuing && hippie.flee_timer <= 0.0 {
             if inside_camp {
                 if hippie.pos.distance(hippie.target) <= HIPPIE_TARGET_EPSILON {
                     hippie.target = random_point_in_polygon(camp, &mut hippie.rng_state);
@@ -172,19 +246,37 @@ pub fn update_hippies(
             hippie.facing = player::facing_from_direction(to_target);
         }
 
-        let speed = if angry {
+        let base_speed = if angry {
             chase_speed(player_speed)
+        } else if chasing_flag {
+            hippie.speed * constants::PSYCHOSIS_SPEED_BOOST
         } else {
             hippie.speed
         };
+        let speed = if mode == GameMode::Burn {
+            drunk_speed(base_speed, hippie.drunkenness)
+        } else {
+            base_speed
+        };
         let step = speed * dt;
-        let next_pos = if to_target.length() <= step || step <= 0.0 {
+        let mut next_pos = if to_target.length() <= step || step <= 0.0 {
             target
         } else {
             hippie.pos + to_target.normalize() * step
         };
 
-        let desired = if angry || !inside_camp {
+        // Apply wobble in Burn mode
+        if mode == GameMode::Burn && hippie.drunkenness > 0.01 && to_target.length_squared() > 0.0 {
+            let wobble = drunk_wobble_offset(
+                to_target.normalize_or_zero(),
+                time,
+                hippie.drunkenness,
+                hippie.rng_state as f32 * 0.01,
+            );
+            next_pos += wobble * dt;
+        }
+
+        let desired = if pursuing || !inside_camp {
             next_pos
         } else if geom::point_in_polygon(next_pos, camp) {
             next_pos
@@ -197,7 +289,7 @@ pub fn update_hippies(
 
         desired_positions.push(desired);
         inside_camps.push(inside_camp);
-        angry_flags.push(angry);
+        angry_flags.push(pursuing);
     }
 
     resolve_hippie_collisions(
@@ -215,21 +307,38 @@ pub fn update_hippies(
         }
         hippie.pos = desired;
     }
+
+    // Drop flags at pentagram blueprint slots
+    for (idx, hippie) in hippies.iter_mut().enumerate() {
+        if let Some(slot) = pentagram_slots[idx] {
+            if hippie.pos.distance(slot) <= constants::PENTAGRAM_DROP_RADIUS
+                && hippie.carried_flags > 0
+            {
+                flag_state.drop_from_hippie(&mut hippie.carried_flags, 1, slot);
+                picked_any = true;
+            }
+        }
+    }
+
     picked_any
 }
 
-pub fn draw_hippies(hippies: &[Hippie]) {
+pub fn draw_hippies(hippies: &[Hippie], time: f32) {
     for hippie in hippies {
         draw_hippie(
             hippie.pos,
             hippie.facing,
             hippie.carried_flags,
             hippie.angry,
+            hippie.dirtiness,
         );
+        draw_dust_trail(hippie.pos, hippie.dirtiness, time);
+        draw_stink_lines(hippie.pos, hippie.dirtiness, time);
+        draw_psychosis_sparkles(hippie.pos, hippie.flag_psychosis, time, hippie.rng_state);
     }
 }
 
-fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8, angry: bool) {
+fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8, angry: bool, dirtiness: f32) {
     let head_center = vec2(pos.x, pos.y - HIPPIE_BODY_LENGTH * 0.5 - HIPPIE_HEAD_RADIUS);
     let body_top = vec2(pos.x, pos.y - HIPPIE_BODY_LENGTH * 0.5);
     let body_bottom = vec2(pos.x, pos.y + HIPPIE_BODY_LENGTH * 0.5);
@@ -237,9 +346,9 @@ fn draw_hippie(pos: Vec2, facing: player::Facing, carried_flags: u8, angry: bool
     let skin = if angry {
         angry_head_color(get_time() as f32)
     } else {
-        Color::new(0.95, 0.86, 0.74, 1.0)
+        dirty_color_shift(Color::new(0.95, 0.86, 0.74, 1.0), dirtiness)
     };
-    let body = Color::new(0.35, 0.7, 0.45, 1.0);
+    let body = dirty_color_shift(Color::new(0.35, 0.7, 0.45, 1.0), dirtiness);
     let limbs = Color::new(0.2, 0.2, 0.2, 1.0);
     let outline = Color::new(0.05, 0.05, 0.05, 1.0);
 
@@ -619,6 +728,256 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t.clamp(0.0, 1.0)
 }
 
+// === Burn mode: spawn hippies with properties ===
+
+pub fn spawn_burn_hippies(
+    positions: &[Vec2],
+    camp_index: usize,
+    camp_vertices: &[Vec2],
+    seed: u32,
+) -> Vec<Hippie> {
+    let mut rng = seed;
+    positions
+        .iter()
+        .enumerate()
+        .map(|(i, &pos)| {
+            let mut hippie_rng = hash_seed(pos, i as u32);
+            let carried_flags = initial_carried_flags(&mut hippie_rng);
+            let target = random_point_in_polygon(camp_vertices, &mut hippie_rng);
+
+            // Half of hippies start at max psychosis
+            let psych_roll = next_f32(&mut rng);
+            let flag_psychosis = if psych_roll < 0.5 {
+                constants::PSYCHOSIS_MAX
+            } else {
+                next_f32(&mut rng) * 0.3
+            };
+            let drunkenness = next_f32(&mut rng);
+            let dirtiness = next_f32(&mut rng);
+
+            Hippie {
+                pos,
+                facing: player::Facing::Down,
+                carried_flags,
+                angry: false,
+                anger_timer: 0.0,
+                anger_delay: 0.0,
+                steal_cooldown: 0.0,
+                flee_timer: 0.0,
+                drop_check_timer: next_f32(&mut hippie_rng)
+                    * constants::HIPPIE_FLAG_DROP_INTERVAL,
+                ignore_flags_timer: 0.0,
+                camp_index,
+                target,
+                speed: HIPPIE_SPEED,
+                rng_state: hippie_rng,
+                flag_psychosis,
+                drunkenness,
+                dirtiness,
+            }
+        })
+        .collect()
+}
+
+// === Dirtiness rendering ===
+
+pub fn dirty_color_shift(base_color: Color, dirtiness: f32) -> Color {
+    let brown = Color::new(0.45, 0.35, 0.25, 1.0);
+    let t = dirtiness * 0.6;
+    Color::new(
+        base_color.r + (brown.r - base_color.r) * t,
+        base_color.g + (brown.g - base_color.g) * t,
+        base_color.b + (brown.b - base_color.b) * t,
+        base_color.a,
+    )
+}
+
+fn draw_dust_trail(pos: Vec2, dirtiness: f32, time: f32) {
+    if dirtiness < constants::DIRTY_DUST_THRESHOLD {
+        return;
+    }
+    let s = scale::MODEL_SCALE;
+    let intensity = (dirtiness - constants::DIRTY_DUST_THRESHOLD)
+        / (1.0 - constants::DIRTY_DUST_THRESHOLD);
+    let dust_color = Color::new(0.65, 0.55, 0.40, 0.15 + intensity * 0.15);
+
+    for i in 0..constants::DIRTY_DUST_PARTICLE_COUNT {
+        let phase = i as f32 * 2.1 + pos.x * 0.01;
+        let ox = (time * 1.5 + phase).sin() * 6.0 * s;
+        let oy = (time * 1.1 + phase * 0.7).cos() * 4.0 * s + 8.0 * s;
+        let r = (3.0 + 2.0 * (time * 0.8 + phase).sin().abs()) * s;
+        draw_circle(pos.x + ox, pos.y + oy, r, dust_color);
+    }
+}
+
+fn draw_stink_lines(pos: Vec2, dirtiness: f32, time: f32) {
+    if dirtiness < constants::DIRTY_STINK_THRESHOLD {
+        return;
+    }
+    let s = scale::MODEL_SCALE;
+    let intensity =
+        (dirtiness - constants::DIRTY_STINK_THRESHOLD) / (1.0 - constants::DIRTY_STINK_THRESHOLD);
+    let stink_color = Color::new(0.45, 0.55, 0.20, 0.3 + intensity * 0.3);
+    let head_y = pos.y - HIPPIE_BODY_LENGTH * 0.5 - HIPPIE_HEAD_RADIUS;
+
+    for i in 0..constants::DIRTY_STINK_LINE_COUNT {
+        let phase = i as f32 * 1.3;
+        let base_x = pos.x + (i as f32 - 1.0) * 4.0 * s;
+        let wave_y = head_y - 8.0 * s - (time * 2.0 + phase).sin().abs() * 6.0 * s;
+        let segments = 4;
+        for seg in 0..segments {
+            let t0 = seg as f32 / segments as f32;
+            let t1 = (seg + 1) as f32 / segments as f32;
+            let y0 = wave_y - t0 * 10.0 * s;
+            let y1 = wave_y - t1 * 10.0 * s;
+            let x0 = base_x + (time * 3.0 + phase + t0 * 4.0).sin() * 3.0 * s;
+            let x1 = base_x + (time * 3.0 + phase + t1 * 4.0).sin() * 3.0 * s;
+            draw_line(x0, y0, x1, y1, 1.0 * s, stink_color);
+        }
+    }
+}
+
+// === Psychosis sparkles ===
+
+const PSYCHOSIS_SPARKLE_COUNT: usize = 8;
+const PSYCHOSIS_SPARKLE_MIN_PSYCHOSIS: f32 = 0.1;
+
+fn draw_psychosis_sparkles(pos: Vec2, psychosis: f32, time: f32, seed: u32) {
+    if psychosis < PSYCHOSIS_SPARKLE_MIN_PSYCHOSIS {
+        return;
+    }
+    let s = scale::MODEL_SCALE;
+    let intensity = (psychosis / constants::PSYCHOSIS_MAX).min(1.0);
+    let count = (PSYCHOSIS_SPARKLE_COUNT as f32 * intensity).ceil() as usize;
+    let body_height = HIPPIE_BODY_LENGTH + HIPPIE_HEAD_RADIUS * 2.0 + HIPPIE_LEG_LENGTH;
+
+    for i in 0..count {
+        let phase = seed as f32 * 0.001 + i as f32 * 1.7;
+        let orbit_speed = 2.0 + (i as f32 * 0.3);
+        let angle = time * orbit_speed + phase;
+        let radius = (8.0 + (i as f32 * 3.0).sin().abs() * 10.0) * s;
+        let vert_offset = ((time * 1.5 + phase * 0.5).sin() * 0.5 + 0.5) * body_height * 0.8;
+
+        let ox = angle.cos() * radius;
+        let oy = -body_height * 0.3 + vert_offset + angle.sin() * radius * 0.3;
+
+        let sparkle_size = (1.0 + (time * 4.0 + phase).sin().abs() * 1.5) * s * intensity;
+        let alpha = (0.4 + 0.4 * (time * 3.0 + phase).sin().abs()) * intensity;
+
+        // Yellow-gold sparkle color
+        let r = 1.0;
+        let g = 0.85 + 0.15 * (time * 2.0 + phase).sin();
+        let b = 0.1 + 0.2 * (time * 3.5 + phase * 1.3).sin().abs();
+
+        draw_circle(
+            pos.x + ox,
+            pos.y + oy,
+            sparkle_size,
+            Color::new(r, g, b, alpha),
+        );
+    }
+}
+
+// === Drunkenness mechanics ===
+
+pub fn drunk_speed(base_speed: f32, drunkenness: f32) -> f32 {
+    let factor = 1.0 - drunkenness * (1.0 - constants::DRUNK_SPEED_FACTOR_MIN);
+    base_speed * factor
+}
+
+pub fn drunk_vision_range(base_range: f32, drunkenness: f32) -> f32 {
+    let factor = 1.0 - drunkenness * (1.0 - constants::DRUNK_VISION_FACTOR_MIN);
+    base_range * factor
+}
+
+pub fn drunk_wobble_offset(direction: Vec2, time: f32, drunkenness: f32, seed: f32) -> Vec2 {
+    if drunkenness < 0.01 || direction.length_squared() < f32::EPSILON {
+        return Vec2::ZERO;
+    }
+    let perp = vec2(-direction.y, direction.x);
+    let wobble = (time * constants::DRUNK_WOBBLE_FREQUENCY + seed).sin()
+        * constants::DRUNK_WOBBLE_AMPLITUDE
+        * drunkenness;
+    perp * wobble
+}
+
+// === Pentagram building ===
+
+fn camp_blueprint<'a>(blueprints: &'a [Vec<Vec2>], camp_index: usize) -> &'a [Vec2] {
+    blueprints
+        .get(camp_index)
+        .map(|v| v.as_slice())
+        .unwrap_or(&[])
+}
+
+fn find_empty_pentagram_slot(
+    blueprint: &[Vec2],
+    ground_flags: &[flags::Flag],
+    hippie_pos: Vec2,
+) -> Option<Vec2> {
+    let mut best_dist = f32::MAX;
+    let mut best_slot = None;
+
+    for &slot in blueprint {
+        let occupied = ground_flags
+            .iter()
+            .any(|f| f.pos.distance(slot) <= constants::PENTAGRAM_SLOT_DETECT_RADIUS);
+        if !occupied {
+            let dist = hippie_pos.distance(slot);
+            if dist < best_dist {
+                best_dist = dist;
+                best_slot = Some(slot);
+            }
+        }
+    }
+
+    best_slot
+}
+
+// === Flag Psychosis AI ===
+
+pub fn update_hippie_psychosis(hippie: &mut Hippie, pentagram_centers: &[Vec2], dt: f32) {
+    for center in pentagram_centers {
+        let dist = hippie.pos.distance(*center);
+        if dist < constants::PSYCHOSIS_PENTAGRAM_RADIUS {
+            let proximity = 1.0 - (dist / constants::PSYCHOSIS_PENTAGRAM_RADIUS);
+            hippie.flag_psychosis += constants::PSYCHOSIS_PENTAGRAM_GAIN_RATE * proximity * dt;
+            hippie.flag_psychosis = hippie.flag_psychosis.min(constants::PSYCHOSIS_MAX);
+        }
+    }
+}
+
+pub fn psychosis_target(
+    hippie: &Hippie,
+    ground_flags: &[flags::Flag],
+    camp_vertices: &[Vec2],
+) -> Option<Vec2> {
+    if hippie.flag_psychosis < constants::PSYCHOSIS_CHASE_THRESHOLD {
+        return None;
+    }
+    if hippie.carried_flags >= HIPPIE_FLAG_CAPACITY {
+        return None;
+    }
+
+    let pursuit_range = constants::PSYCHOSIS_BASE_PURSUIT_RANGE
+        + (constants::PSYCHOSIS_MAX_PURSUIT_RANGE - constants::PSYCHOSIS_BASE_PURSUIT_RANGE)
+            * hippie.flag_psychosis.min(1.0);
+
+    let mut best_dist = pursuit_range;
+    let mut best_pos = None;
+    for flag in ground_flags {
+        if geom::point_in_polygon(flag.pos, camp_vertices) {
+            continue;
+        }
+        let dist = hippie.pos.distance(flag.pos);
+        if dist < best_dist {
+            best_dist = dist;
+            best_pos = Some(flag.pos);
+        }
+    }
+    best_pos
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -678,6 +1037,10 @@ mod tests {
                 &mut flag_state,
                 vec2(50.0, 50.0),
                 100.0,
+                GameMode::Classic,
+                &[],
+                &[],
+                0.0,
             );
             assert!(geom::point_in_polygon(hippies[0].pos, &square));
         }
@@ -729,6 +1092,10 @@ mod tests {
             &mut flag_state,
             vec2(0.0, 0.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert_eq!(flag_state.ground_flags().len(), 1);
         assert_eq!(hippies[0].carried_flags, 0);
@@ -766,6 +1133,10 @@ mod tests {
             &mut flag_state,
             vec2(0.0, 0.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert!(picked);
         assert_eq!(hippies[0].carried_flags, 2);
@@ -798,6 +1169,10 @@ mod tests {
             &mut flag_state,
             vec2(0.0, 0.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert!(!picked);
         assert_eq!(flag_state.ground_flags().len(), 1);
@@ -854,6 +1229,9 @@ mod tests {
                 target: vec2(0.0, 0.0),
                 speed: HIPPIE_SPEED,
                 rng_state: 1,
+                flag_psychosis: 0.0,
+                drunkenness: 0.0,
+                dirtiness: 0.0,
             },
             Hippie {
                 pos: vec2(3.0, 0.0),
@@ -870,6 +1248,9 @@ mod tests {
                 target: vec2(0.0, 0.0),
                 speed: HIPPIE_SPEED,
                 rng_state: 2,
+                flag_psychosis: 0.0,
+                drunkenness: 0.0,
+                dirtiness: 0.0,
             },
         ];
 
@@ -900,6 +1281,9 @@ mod tests {
             target: vec2(0.0, 0.0),
             speed: HIPPIE_SPEED,
             rng_state: 1,
+            flag_psychosis: 0.0,
+            drunkenness: 0.0,
+            dirtiness: 0.0,
         }];
 
         let mut flag_state = FlagState::new(Vec::new(), 0, 0);
@@ -932,6 +1316,10 @@ mod tests {
             &mut flag_state,
             vec2(100.0, 100.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert!(!hippies[0].angry);
     }
@@ -960,6 +1348,10 @@ mod tests {
             &mut flag_state,
             vec2(12.0, 12.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert!(hippies[0].angry);
     }
@@ -988,6 +1380,10 @@ mod tests {
             &mut flag_state,
             vec2(6.0, 6.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert!(!hippies[0].angry);
         assert_eq!(hippies[0].anger_timer, 0.0);
@@ -1028,6 +1424,10 @@ mod tests {
             &mut flag_state,
             vec2(5.0, 5.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert_eq!(flag_state.player_inventory(), 1);
         assert_eq!(hippies[0].carried_flags, 2);
@@ -1061,6 +1461,10 @@ mod tests {
             &mut flag_state,
             vec2(5.0, 5.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert_eq!(flag_state.player_inventory(), 0);
         assert_eq!(hippies[0].carried_flags, 2);
@@ -1094,6 +1498,10 @@ mod tests {
             &mut flag_state,
             vec2(5.0, 5.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         let after_first = flag_state.player_inventory();
         update_hippies(
@@ -1103,6 +1511,10 @@ mod tests {
             &mut flag_state,
             vec2(5.0, 5.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         assert_eq!(flag_state.player_inventory(), after_first);
     }
@@ -1140,6 +1552,10 @@ mod tests {
             &mut flag_state,
             player_pos,
             1000.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
 
         let dist_to_player = hippies[0].pos.distance(player_pos);
@@ -1172,6 +1588,10 @@ mod tests {
             &mut flag_state,
             vec2(30.0, 5.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
 
         assert!(!geom::point_in_polygon(hippies[0].pos, &camp));
@@ -1204,6 +1624,10 @@ mod tests {
             &mut flag_state,
             vec2(100.0, 100.0),
             100.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
         let after = hippies[0].pos.distance(hippies[0].target);
         assert!(after < before);
@@ -1237,6 +1661,10 @@ mod tests {
             &mut flag_state,
             vec2(50.0, 50.0),
             200.0,
+            GameMode::Classic,
+            &[],
+            &[],
+            0.0,
         );
 
         let distance = hippies[0].pos.distance(hippies[1].pos);
@@ -1245,5 +1673,312 @@ mod tests {
             "hippies too close after collision: {}",
             distance
         );
+    }
+
+    // === Dirtiness tests ===
+
+    #[test]
+    fn dirty_color_shift_at_zero_unchanged() {
+        let base = Color::new(0.95, 0.86, 0.74, 1.0);
+        let shifted = dirty_color_shift(base, 0.0);
+        assert!((shifted.r - base.r).abs() < 1e-6);
+        assert!((shifted.g - base.g).abs() < 1e-6);
+        assert!((shifted.b - base.b).abs() < 1e-6);
+    }
+
+    #[test]
+    fn dirty_color_shift_at_one_is_brownish() {
+        let base = Color::new(0.95, 0.86, 0.74, 1.0);
+        let shifted = dirty_color_shift(base, 1.0);
+        assert!(shifted.r < base.r);
+        assert!(shifted.g < base.g);
+        assert!(shifted.b < base.b);
+    }
+
+    #[test]
+    fn dirty_color_shift_preserves_alpha() {
+        let base = Color::new(0.95, 0.86, 0.74, 0.5);
+        let shifted = dirty_color_shift(base, 0.5);
+        assert!((shifted.a - 0.5).abs() < 1e-6);
+    }
+
+    // === Drunkenness tests ===
+
+    #[test]
+    fn drunk_speed_at_zero_is_full() {
+        assert!((drunk_speed(100.0, 0.0) - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn drunk_speed_at_one_is_half() {
+        let speed = drunk_speed(100.0, 1.0);
+        assert!((speed - 100.0 * constants::DRUNK_SPEED_FACTOR_MIN).abs() < 1e-4);
+    }
+
+    #[test]
+    fn drunk_speed_interpolates() {
+        let speed = drunk_speed(100.0, 0.5);
+        let expected = 100.0 * (1.0 - 0.5 * (1.0 - constants::DRUNK_SPEED_FACTOR_MIN));
+        assert!((speed - expected).abs() < 1e-4);
+    }
+
+    #[test]
+    fn drunk_vision_range_scales() {
+        let full = drunk_vision_range(100.0, 0.0);
+        let min = drunk_vision_range(100.0, 1.0);
+        assert!((full - 100.0).abs() < 1e-6);
+        assert!((min - 100.0 * constants::DRUNK_VISION_FACTOR_MIN).abs() < 1e-4);
+    }
+
+    #[test]
+    fn drunk_wobble_zero_when_sober() {
+        let wobble = drunk_wobble_offset(vec2(1.0, 0.0), 1.0, 0.0, 0.0);
+        assert!(wobble.length() < 1e-6);
+    }
+
+    #[test]
+    fn drunk_wobble_bounded() {
+        for t in 0..100 {
+            let wobble = drunk_wobble_offset(vec2(1.0, 0.0), t as f32 * 0.1, 1.0, 0.0);
+            assert!(
+                wobble.length() <= constants::DRUNK_WOBBLE_AMPLITUDE * 1.01,
+                "Wobble {} exceeds amplitude {}",
+                wobble.length(),
+                constants::DRUNK_WOBBLE_AMPLITUDE
+            );
+        }
+    }
+
+    // === Flag Psychosis tests ===
+
+    #[test]
+    fn psychosis_increases_near_pentagram() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_burn_hippies(&[vec2(10.0, 10.0)], 0, &camp, 42);
+        hippies[0].flag_psychosis = 0.0;
+        let pentagram = vec2(10.0, 10.0);
+        update_hippie_psychosis(&mut hippies[0], &[pentagram], 1.0);
+        assert!(hippies[0].flag_psychosis > 0.0);
+    }
+
+    #[test]
+    fn psychosis_does_not_increase_far_from_pentagram() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_burn_hippies(&[vec2(10.0, 10.0)], 0, &camp, 42);
+        hippies[0].flag_psychosis = 0.0;
+        let far_pentagram = vec2(10000.0, 10000.0);
+        update_hippie_psychosis(&mut hippies[0], &[far_pentagram], 1.0);
+        assert!((hippies[0].flag_psychosis).abs() < 1e-6);
+    }
+
+    #[test]
+    fn psychosis_capped_at_max() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_burn_hippies(&[vec2(10.0, 10.0)], 0, &camp, 42);
+        hippies[0].flag_psychosis = constants::PSYCHOSIS_MAX;
+        update_hippie_psychosis(&mut hippies[0], &[vec2(10.0, 10.0)], 100.0);
+        assert!(hippies[0].flag_psychosis <= constants::PSYCHOSIS_MAX);
+    }
+
+    #[test]
+    fn psychosis_target_returns_none_below_threshold() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(20.0, 0.0),
+            vec2(20.0, 20.0),
+            vec2(0.0, 20.0),
+        ];
+        let mut hippies = spawn_burn_hippies(&[vec2(10.0, 10.0)], 0, &camp, 42);
+        hippies[0].flag_psychosis = 0.0;
+        let flags = vec![flags::Flag {
+            pos: vec2(50.0, 50.0),
+            phase: 0.0,
+        }];
+        assert!(psychosis_target(&hippies[0], &flags, &camp).is_none());
+    }
+
+    #[test]
+    fn psychosis_target_ignores_flags_inside_camp() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(100.0, 0.0),
+            vec2(100.0, 100.0),
+            vec2(0.0, 100.0),
+        ];
+        let mut hippies = spawn_burn_hippies(&[vec2(50.0, 50.0)], 0, &camp, 42);
+        hippies[0].flag_psychosis = 1.0;
+        hippies[0].carried_flags = 0;
+        let flags = vec![flags::Flag {
+            pos: vec2(50.0, 60.0),
+            phase: 0.0,
+        }];
+        assert!(psychosis_target(&hippies[0], &flags, &camp).is_none());
+    }
+
+    #[test]
+    fn psychosis_target_finds_nearest_outside_flag() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(10.0, 0.0),
+            vec2(10.0, 10.0),
+            vec2(0.0, 10.0),
+        ];
+        let mut hippies = spawn_burn_hippies(&[vec2(5.0, 5.0)], 0, &camp, 42);
+        hippies[0].flag_psychosis = 1.0;
+        hippies[0].carried_flags = 0;
+        let flags = vec![
+            flags::Flag {
+                pos: vec2(15.0, 5.0),
+                phase: 0.0,
+            },
+            flags::Flag {
+                pos: vec2(50.0, 50.0),
+                phase: 0.0,
+            },
+        ];
+        let target = psychosis_target(&hippies[0], &flags, &camp);
+        assert!(target.is_some());
+        let t = target.unwrap();
+        assert!((t.x - 15.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn burn_hippie_spawn_has_properties() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(100.0, 0.0),
+            vec2(100.0, 100.0),
+            vec2(0.0, 100.0),
+        ];
+        let hippies = spawn_burn_hippies(
+            &[vec2(50.0, 50.0), vec2(60.0, 60.0), vec2(70.0, 70.0)],
+            0,
+            &camp,
+            42,
+        );
+        assert_eq!(hippies.len(), 3);
+        // Properties should be initialized (not all zero since seed varies)
+        let has_nonzero = hippies
+            .iter()
+            .any(|h| h.drunkenness > 0.0 || h.dirtiness > 0.0);
+        assert!(has_nonzero, "Expected at least some non-zero properties");
+    }
+
+    #[test]
+    fn classic_mode_hippie_properties_zero() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(100.0, 0.0),
+            vec2(100.0, 100.0),
+            vec2(0.0, 100.0),
+        ];
+        let hippies = spawn_hippies(&[vec2(50.0, 50.0)], 0, &camp);
+        assert_eq!(hippies[0].flag_psychosis, 0.0);
+        assert_eq!(hippies[0].drunkenness, 0.0);
+        assert_eq!(hippies[0].dirtiness, 0.0);
+    }
+
+    // === Pentagram building tests ===
+
+    #[test]
+    fn find_empty_pentagram_slot_returns_nearest_empty() {
+        let blueprint = vec![
+            vec2(100.0, 100.0),
+            vec2(200.0, 100.0),
+            vec2(300.0, 100.0),
+        ];
+        // No ground flags - all slots empty
+        let slot = find_empty_pentagram_slot(&blueprint, &[], vec2(90.0, 100.0));
+        assert!(slot.is_some());
+        assert!((slot.unwrap().x - 100.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn find_empty_pentagram_slot_skips_occupied() {
+        let blueprint = vec![
+            vec2(100.0, 100.0),
+            vec2(200.0, 100.0),
+            vec2(300.0, 100.0),
+        ];
+        // Flag at first slot
+        let ground = vec![flags::Flag {
+            pos: vec2(100.0, 100.0),
+            phase: 0.0,
+        }];
+        let slot = find_empty_pentagram_slot(&blueprint, &ground, vec2(90.0, 100.0));
+        assert!(slot.is_some());
+        assert!((slot.unwrap().x - 200.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn find_empty_pentagram_slot_returns_none_when_all_filled() {
+        let blueprint = vec![vec2(100.0, 100.0), vec2(200.0, 100.0)];
+        let ground = vec![
+            flags::Flag {
+                pos: vec2(100.0, 100.0),
+                phase: 0.0,
+            },
+            flags::Flag {
+                pos: vec2(200.0, 100.0),
+                phase: 0.0,
+            },
+        ];
+        let slot = find_empty_pentagram_slot(&blueprint, &ground, vec2(150.0, 100.0));
+        assert!(slot.is_none());
+    }
+
+    #[test]
+    fn hippie_drops_flag_at_pentagram_slot() {
+        let camp = vec![
+            vec2(0.0, 0.0),
+            vec2(200.0, 0.0),
+            vec2(200.0, 200.0),
+            vec2(0.0, 200.0),
+        ];
+        // Place hippie at slot position with flags and high psychosis
+        let slot = vec2(100.0, 100.0);
+        let blueprint = vec![vec![slot]];
+        let mut hippies = spawn_burn_hippies(&[slot], 0, &camp, 42);
+        hippies[0].flag_psychosis = constants::PSYCHOSIS_MAX;
+        hippies[0].carried_flags = 2;
+        hippies[0].target = slot;
+
+        let mut flag_state = FlagState::new(Vec::new(), 0, 2);
+        let camps = vec![camp.clone()];
+
+        update_hippies(
+            &mut hippies,
+            0.0,
+            &camps,
+            &mut flag_state,
+            vec2(500.0, 500.0),
+            100.0,
+            GameMode::Burn,
+            &[],
+            &blueprint,
+            0.0,
+        );
+
+        // Hippie should have dropped a flag at the slot
+        assert_eq!(hippies[0].carried_flags, 1);
+        assert_eq!(flag_state.ground_flags().len(), 1);
+        let dropped = &flag_state.ground_flags()[0];
+        assert!((dropped.pos.x - slot.x).abs() < 1e-3);
+        assert!((dropped.pos.y - slot.y).abs() < 1e-3);
     }
 }

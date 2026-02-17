@@ -1,9 +1,11 @@
 use macroquad::prelude::*;
 
 mod assets;
+mod burn_camps;
 mod camera;
 mod camps;
 mod constants;
+mod effigy;
 mod fire;
 mod flag_state;
 mod flags;
@@ -14,15 +16,52 @@ mod map;
 mod movement;
 mod npc;
 mod player;
+mod procmap;
 mod scale;
 mod scenery;
 
 use constants::*;
 
+enum MapKind {
+    Tiled(map::TileMap),
+    Procedural(procmap::ProceduralMap),
+}
+
+impl MapKind {
+    fn width(&self) -> f32 {
+        match self {
+            MapKind::Tiled(m) => m.width,
+            MapKind::Procedural(m) => m.width,
+        }
+    }
+
+    fn height(&self) -> f32 {
+        match self {
+            MapKind::Tiled(m) => m.height,
+            MapKind::Procedural(m) => m.height,
+        }
+    }
+
+    fn field_rect(&self) -> Rect {
+        match self {
+            MapKind::Tiled(m) => m.field_rect(),
+            MapKind::Procedural(m) => m.field_rect(),
+        }
+    }
+
+    fn draw(&mut self, view: Rect) {
+        match self {
+            MapKind::Tiled(m) => m.draw(view),
+            MapKind::Procedural(m) => m.draw(view),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scene {
     Title,
     ClassSelect,
+    BurnConfig,
     Dungeon,
 }
 
@@ -30,6 +69,7 @@ enum Scene {
 enum ClassChoice {
     Vexillomancer,
     StressTest,
+    TheBurn,
 }
 
 impl ClassChoice {
@@ -37,11 +77,22 @@ impl ClassChoice {
         match self {
             ClassChoice::Vexillomancer => "Vexillomancer",
             ClassChoice::StressTest => "Stress Test",
+            ClassChoice::TheBurn => "The Burn",
         }
     }
 }
 
-const CLASS_OPTIONS: [ClassChoice; 2] = [ClassChoice::Vexillomancer, ClassChoice::StressTest];
+const CLASS_OPTIONS: [ClassChoice; 3] = [
+    ClassChoice::Vexillomancer,
+    ClassChoice::StressTest,
+    ClassChoice::TheBurn,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GameMode {
+    Classic,
+    Burn,
+}
 
 #[derive(Clone, Copy, Debug)]
 struct Player {
@@ -51,6 +102,7 @@ struct Player {
 
 struct Game {
     scene: Scene,
+    mode: GameMode,
     player: Player,
     class_index: usize,
     flag_state: flag_state::FlagState,
@@ -65,11 +117,16 @@ struct Game {
     flagic_accum: f32,
     camp_notices: Vec<CampNotice>,
     camp_vertices: Vec<Vec<Vec2>>,
+    pentagram_blueprints: Vec<Vec<Vec2>>,
     hippies: Vec<npc::Hippie>,
-    map: map::TileMap,
+    map: MapKind,
     camp_regions: Vec<map::MapRegion>,
+    effigy: Option<effigy::Effigy>,
     camera: camera::CameraState,
     player_speed: f32,
+    burn_camp_count: usize,
+    burn_hippies_per_camp: usize,
+    burn_config_field: usize,
 }
 
 struct CampNotice {
@@ -100,9 +157,118 @@ impl Game {
         Self::new_with_class(ClassChoice::Vexillomancer)
     }
 
+    fn new_burn_mode(camp_count: usize, hippies_per_camp: usize, seed: u32) -> Self {
+        let core_radius = procmap::core_radius(camp_count);
+        let map_size = procmap::initial_map_size(core_radius);
+        let effigy_pos = vec2(map_size * 0.5, map_size * 0.5);
+
+        let proc_map = procmap::ProceduralMap::new(effigy_pos, core_radius, seed);
+        let camp_configs = burn_camps::generate_burn_camps(
+            effigy_pos,
+            camp_count,
+            hippies_per_camp,
+            seed,
+        );
+
+        let camp_regions = camp_configs
+            .iter()
+            .map(|c| map::MapRegion::new(c.name, c.vertices.clone(), c.color))
+            .collect::<Vec<_>>();
+        let camp_notices = camp_configs
+            .iter()
+            .map(|c| CampNotice::new(c.name, c.notice_text))
+            .collect::<Vec<_>>();
+        let camp_vertices = camps::collect_camp_vertices(&camp_configs);
+        let pentagram_blueprints: Vec<Vec<Vec2>> = camp_configs
+            .iter()
+            .enumerate()
+            .map(|(i, camp)| {
+                let centroid = burn_camps::polygon_centroid(&camp.vertices);
+                burn_camps::pentagram_blueprint(centroid, seed.wrapping_add(i as u32 * 7919))
+            })
+            .collect();
+
+        let mut hippies = Vec::new();
+        let mut hippie_seed = seed.wrapping_add(12345);
+        for (i, camp) in camp_configs.iter().enumerate() {
+            hippies.extend(npc::spawn_burn_hippies(
+                &camp.spawns.hippies,
+                i,
+                &camp.vertices,
+                hippie_seed,
+            ));
+            hippie_seed = hippie_seed.wrapping_add(1);
+        }
+
+        let camp_spawns = camps::collect_scenery_spawns(&camp_configs);
+        let mut scenery = Vec::new();
+        scenery::apply_spawns(&mut scenery, &camp_spawns);
+
+        let flag_spawns = camps::collect_flag_spawns(&camp_configs);
+        let field_rect = proc_map.field_rect();
+        let mut ground_flags =
+            flags::spawn_random_flags(FLAG_COUNT_START, field_rect, 40.0 * scale::MODEL_SCALE);
+        for pos in flag_spawns {
+            ground_flags.push(flags::make_flag(pos));
+        }
+
+        let total_flags =
+            ground_flags.len() as u32 + STARTING_FLAG_INVENTORY + total_hippie_flags(&hippies);
+        let flag_state =
+            flag_state::FlagState::new(ground_flags, STARTING_FLAG_INVENTORY, total_flags);
+        let ley_state =
+            ley_lines::compute_ley_state(flag_state.ground_flags(), BURN_LEY_MAX_DISTANCE);
+
+        let player_speed = map::adjusted_travel_speed(
+            map_size,
+            map_size,
+            MAP_TRAVEL_MINUTES,
+            SPEED_MULTIPLIER,
+        ) * 4.0;
+        let player_pos = effigy_pos + vec2(0.0, 30.0);
+
+        let effigy_obj = effigy::Effigy {
+            pos: effigy_pos,
+            burning: false,
+            burn_progress: 0.0,
+        };
+
+        Self {
+            scene: Scene::Dungeon,
+            mode: GameMode::Burn,
+            player: Player {
+                pos: player_pos,
+                facing: player::Facing::Down,
+            },
+            class_index: class_choice_index(ClassChoice::TheBurn),
+            flag_state,
+            wind: flags::Wind::new(vec2(1.0, 0.0), 0.6),
+            scenery,
+            ley_lines: ley_state.lines,
+            pentagram_centers: ley_state.pentagram_centers,
+            pentagram_sparkles: Vec::new(),
+            sparkle_spawn_accum: 0.0,
+            sparkle_spawn_counter: 0,
+            flagic: 0,
+            flagic_accum: 0.0,
+            camp_notices,
+            camp_vertices,
+            pentagram_blueprints,
+            hippies,
+            map: MapKind::Procedural(proc_map),
+            camp_regions,
+            effigy: Some(effigy_obj),
+            camera: camera::CameraState::new(),
+            player_speed,
+            burn_camp_count: camp_count,
+            burn_hippies_per_camp: hippies_per_camp,
+            burn_config_field: 0,
+        }
+    }
+
     fn new_with_class(class_choice: ClassChoice) -> Self {
-        let map = map::TileMap::load_from_dir(MAP_TILE_DIR);
-        let field_rect = map.field_rect();
+        let tile_map = map::TileMap::load_from_dir(MAP_TILE_DIR);
+        let field_rect = tile_map.field_rect();
         let camp_configs = camps::camp_configs();
         let camp_regions = camp_configs
             .iter()
@@ -114,7 +280,7 @@ impl Game {
             .collect::<Vec<_>>();
         let camp_vertices = camps::collect_camp_vertices(&camp_configs);
         let hippies = match class_choice {
-            ClassChoice::Vexillomancer => {
+            ClassChoice::Vexillomancer | ClassChoice::TheBurn => {
                 let mut hippies = Vec::new();
                 for (camp_index, camp) in camp_configs.iter().enumerate() {
                     if !camp.spawns.hippies.is_empty() {
@@ -142,10 +308,15 @@ impl Game {
             flag_state::FlagState::new(ground_flags, STARTING_FLAG_INVENTORY, total_flags);
         let ley_state = ley_lines::compute_ley_state(flag_state.ground_flags(), LEY_MAX_DISTANCE);
         let scenery = scenery::spawn_scenery(field_rect, &camp_spawns);
-        let player_speed =
-            map::adjusted_travel_speed(map.width, map.height, MAP_TRAVEL_MINUTES, SPEED_MULTIPLIER);
+        let player_speed = map::adjusted_travel_speed(
+            tile_map.width,
+            tile_map.height,
+            MAP_TRAVEL_MINUTES,
+            SPEED_MULTIPLIER,
+        );
         Self {
             scene: Scene::Title,
+            mode: GameMode::Classic,
             player: Player {
                 pos: PLAYER_SPAWN_POS,
                 facing: player::Facing::Down,
@@ -163,11 +334,16 @@ impl Game {
             flagic_accum: 0.0,
             camp_notices,
             camp_vertices,
+            pentagram_blueprints: Vec::new(),
             hippies,
-            map,
+            map: MapKind::Tiled(tile_map),
             camp_regions,
+            effigy: None,
             camera: camera::CameraState::new(),
             player_speed,
+            burn_camp_count: BURN_DEFAULT_CAMPS,
+            burn_hippies_per_camp: BURN_DEFAULT_HIPPIES,
+            burn_config_field: 0,
         }
     }
 }
@@ -176,6 +352,7 @@ fn class_choice_index(choice: ClassChoice) -> usize {
     match choice {
         ClassChoice::Vexillomancer => 0,
         ClassChoice::StressTest => 1,
+        ClassChoice::TheBurn => 2,
     }
 }
 
@@ -256,6 +433,7 @@ async fn main() {
         match game.scene {
             Scene::Title => render_title(&mut game, &assets),
             Scene::ClassSelect => render_class_select(&mut game),
+            Scene::BurnConfig => render_burn_config(&mut game),
             Scene::Dungeon => render_dungeon(&mut game),
         }
 
@@ -329,10 +507,75 @@ fn render_class_select(game: &mut Game) {
 
     if is_key_pressed(KeyCode::Enter) {
         let choice = class_choice_from_index(game.class_index);
-        let mut new_game = Game::new_with_class(choice);
-        new_game.scene = Scene::Dungeon;
-        new_game.class_index = game.class_index;
-        *game = new_game;
+        if choice == ClassChoice::TheBurn {
+            game.scene = Scene::BurnConfig;
+        } else {
+            let mut new_game = Game::new_with_class(choice);
+            new_game.scene = Scene::Dungeon;
+            new_game.class_index = game.class_index;
+            *game = new_game;
+        }
+    }
+}
+
+fn render_burn_config(game: &mut Game) {
+    clear_background(BLACK);
+
+    draw_centered("The Burn", 100.0, 44.0, ACCENT);
+
+    if is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W) {
+        game.burn_config_field = (game.burn_config_field + 1) % 2;
+    }
+    if is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S) {
+        game.burn_config_field = (game.burn_config_field + 1) % 2;
+    }
+
+    if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D) {
+        match game.burn_config_field {
+            0 => game.burn_camp_count = (game.burn_camp_count + 1).min(BURN_MAX_CAMPS),
+            _ => game.burn_hippies_per_camp = (game.burn_hippies_per_camp + 1).min(BURN_MAX_HIPPIES),
+        }
+    }
+    if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A) {
+        match game.burn_config_field {
+            0 => game.burn_camp_count = game.burn_camp_count.saturating_sub(1).max(BURN_MIN_CAMPS),
+            _ => {
+                game.burn_hippies_per_camp = game
+                    .burn_hippies_per_camp
+                    .saturating_sub(1)
+                    .max(BURN_MIN_HIPPIES)
+            }
+        }
+    }
+
+    let fields = [
+        format!("Camps: {}", game.burn_camp_count),
+        format!("Hippies per Camp: {}", game.burn_hippies_per_camp),
+    ];
+    for (i, label) in fields.iter().enumerate() {
+        let line = if i == game.burn_config_field {
+            format!("< {} >", label)
+        } else {
+            label.clone()
+        };
+        draw_centered(&line, 200.0 + i as f32 * 36.0, 28.0, ACCENT);
+    }
+
+    draw_centered("Up/Down to select field", 300.0, 18.0, ACCENT);
+    draw_centered("Left/Right to adjust", 325.0, 18.0, ACCENT);
+    draw_centered("Enter to begin", 355.0, 24.0, ACCENT);
+    draw_centered("Esc to go back", 385.0, 20.0, ACCENT);
+
+    if is_key_pressed(KeyCode::Escape) {
+        game.scene = Scene::ClassSelect;
+        return;
+    }
+
+    if is_key_pressed(KeyCode::Enter) {
+        let seed = (get_time() * 1000.0) as u32;
+        let camp_count = game.burn_camp_count;
+        let hippies_per_camp = game.burn_hippies_per_camp;
+        *game = Game::new_burn_mode(camp_count, hippies_per_camp, seed);
     }
 }
 
@@ -356,6 +599,10 @@ fn render_dungeon(game: &mut Game) {
         &mut game.flag_state,
         player_center,
         game.player_speed,
+        game.mode,
+        &game.pentagram_centers,
+        &game.pentagram_blueprints,
+        time,
     );
     if hippies_picked {
         recompute_ley_state(game);
@@ -369,8 +616,11 @@ fn render_dungeon(game: &mut Game) {
     for camp in &game.camp_regions {
         camp.draw();
     }
+    if let Some(ref eff) = game.effigy {
+        effigy::draw_effigy(eff, time);
+    }
     scenery::draw_scenery(&game.scenery, time);
-    npc::draw_hippies(&game.hippies);
+    npc::draw_hippies(&game.hippies, time);
     draw_ley_lines(&game.ley_lines, time);
     for flag in game.flag_state.ground_flags() {
         draw_flag(flag, time, game.wind);
@@ -428,14 +678,17 @@ fn handle_movement(game: &mut Game) {
     let delta = movement::movement_delta(input, game.player_speed, get_frame_time());
     game.player.pos += delta;
 
-    let max_x = (game.map.width - player::PLAYER_WIDTH).max(0.0);
-    let max_y = (game.map.height - player::PLAYER_HEIGHT).max(0.0);
-    game.player.pos.x = game.player.pos.x.clamp(0.0, max_x);
-    game.player.pos.y = game.player.pos.y.clamp(0.0, max_y);
+    if game.mode == GameMode::Classic {
+        let max_x = (game.map.width() - player::PLAYER_WIDTH).max(0.0);
+        let max_y = (game.map.height() - player::PLAYER_HEIGHT).max(0.0);
+        game.player.pos.x = game.player.pos.x.clamp(0.0, max_x);
+        game.player.pos.y = game.player.pos.y.clamp(0.0, max_y);
+    }
 }
 
 fn handle_flag_interactions(game: &mut Game) {
     let field = game.map.field_rect();
+
 
     if is_mouse_button_pressed(MouseButton::Left) {
         let placed =
@@ -599,7 +852,11 @@ fn total_hippie_flags(hippies: &[npc::Hippie]) -> u32 {
 }
 
 fn recompute_ley_state(game: &mut Game) {
-    let state = ley_lines::compute_ley_state(game.flag_state.ground_flags(), LEY_MAX_DISTANCE);
+    let max_dist = match game.mode {
+        GameMode::Burn => BURN_LEY_MAX_DISTANCE,
+        GameMode::Classic => LEY_MAX_DISTANCE,
+    };
+    let state = ley_lines::compute_ley_state(game.flag_state.ground_flags(), max_dist);
     game.ley_lines = state.lines;
     game.pentagram_centers = state.pentagram_centers;
 }
@@ -895,7 +1152,7 @@ fn build_camera(game: &Game) -> Camera2D {
         game.player.pos + vec2(player::PLAYER_WIDTH * 0.5, player::PLAYER_HEIGHT * 0.5);
     let target = camera::clamp_target(
         player_center + game.camera.pan,
-        vec2(game.map.width, game.map.height),
+        vec2(game.map.width(), game.map.height()),
         view,
     );
 
@@ -1045,6 +1302,48 @@ mod tests {
     }
 
     #[test]
+    fn class_choice_the_burn_index_is_two() {
+        assert_eq!(class_choice_index(ClassChoice::TheBurn), 2);
+        assert_eq!(class_choice_from_index(2), ClassChoice::TheBurn);
+    }
+
+    #[test]
+    fn burn_config_clamps_camps() {
+        assert!(BURN_MIN_CAMPS >= 1);
+        assert!(BURN_MAX_CAMPS <= 20);
+        let clamped_low = 0usize.max(BURN_MIN_CAMPS);
+        assert_eq!(clamped_low, BURN_MIN_CAMPS);
+        let clamped_high = 100usize.min(BURN_MAX_CAMPS);
+        assert_eq!(clamped_high, BURN_MAX_CAMPS);
+    }
+
+    #[test]
+    fn burn_config_clamps_hippies() {
+        assert!(BURN_MIN_HIPPIES >= 1);
+        assert!(BURN_MAX_HIPPIES <= 50);
+    }
+
+    #[test]
+    fn game_mode_classic_for_vexillomancer() {
+        // new_with_class always produces Classic mode
+        // TheBurn will use a different constructor (new_burn_mode) later
+        let mode = match ClassChoice::Vexillomancer {
+            ClassChoice::TheBurn => GameMode::Burn,
+            _ => GameMode::Classic,
+        };
+        assert_eq!(mode, GameMode::Classic);
+    }
+
+    #[test]
+    fn game_mode_burn_for_the_burn() {
+        let mode = match ClassChoice::TheBurn {
+            ClassChoice::TheBurn => GameMode::Burn,
+            _ => GameMode::Classic,
+        };
+        assert_eq!(mode, GameMode::Burn);
+    }
+
+    #[test]
     fn stress_test_spawns_hippies_with_one_flag_each() {
         let camp_configs = camps::camp_configs();
         let hippies = spawn_stress_test_hippies(&camp_configs);
@@ -1063,5 +1362,46 @@ mod tests {
             let expected = per_camp + usize::from(index < remainder);
             assert_eq!(*count, expected);
         }
+    }
+
+    #[test]
+    fn burn_mode_constructs_without_panic() {
+        let game = Game::new_burn_mode(3, 5, 42);
+        assert_eq!(game.mode, GameMode::Burn);
+        assert_eq!(game.scene, Scene::Dungeon);
+        assert!(game.effigy.is_some());
+    }
+
+    #[test]
+    fn burn_mode_hippie_count_matches_config() {
+        let camps = 4;
+        let per_camp = 6;
+        let game = Game::new_burn_mode(camps, per_camp, 99);
+        assert_eq!(game.hippies.len(), camps * per_camp);
+    }
+
+    #[test]
+    fn burn_mode_camp_count_matches_config() {
+        let camps = 5;
+        let game = Game::new_burn_mode(camps, 3, 77);
+        assert_eq!(game.camp_regions.len(), camps);
+        assert_eq!(game.camp_notices.len(), camps);
+        assert_eq!(game.camp_vertices.len(), camps);
+    }
+
+    #[test]
+    fn map_kind_procedural_dimensions_positive() {
+        let game = Game::new_burn_mode(3, 3, 42);
+        assert!(game.map.width() > 0.0);
+        assert!(game.map.height() > 0.0);
+    }
+
+    #[test]
+    fn burn_mode_effigy_at_map_center() {
+        let game = Game::new_burn_mode(5, 3, 42);
+        let eff = game.effigy.as_ref().unwrap();
+        let map_center = vec2(game.map.width() * 0.5, game.map.height() * 0.5);
+        // Effigy should be near center (map may have expanded from initial size)
+        assert!(eff.pos.distance(map_center) < game.map.width() * 0.5);
     }
 }

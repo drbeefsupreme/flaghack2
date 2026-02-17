@@ -16,6 +16,10 @@ pub const STARTING_FLAG_INVENTORY: u32 = 10;
 pub const STRESS_TEST_HIPPIE_COUNT: usize = 100;
 pub const STRESS_TEST_FLAGS_PER_HIPPIE: u8 = 1;
 pub const LEY_MAX_DISTANCE: f32 = 150.0;
+pub const BURN_LEY_MAX_DISTANCE: f32 = 390.0;
+pub const BURN_PENTAGRAM_RADIUS: f32 = 78.0;
+pub const PENTAGRAM_SLOT_DETECT_RADIUS: f32 = 15.0 * scale::MODEL_SCALE;
+pub const PENTAGRAM_DROP_RADIUS: f32 = 8.0 * scale::MODEL_SCALE;
 pub const LEY_COLOR_PURPLE: Color = Color::new(0.55, 0.25, 0.95, 1.0);
 pub const LEY_COLOR_PINK: Color = Color::new(1.0, 0.35, 0.75, 1.0);
 pub const LEY_COLOR_CYCLE_SPEED: f32 = 0.9;
@@ -63,3 +67,37 @@ pub const MAP_TILE_DIR: &str = "assets/map/tiles";
 pub const MAP_TRAVEL_MINUTES: f32 = 10.0;
 pub const SPEED_MULTIPLIER: f32 = 4.0;
 pub const PLAYER_SPAWN_POS: Vec2 = Vec2::new(5015.0, 3292.0);
+
+// Burn mode
+pub const BURN_DEFAULT_CAMPS: usize = 5;
+pub const BURN_DEFAULT_HIPPIES: usize = 10;
+pub const BURN_MIN_CAMPS: usize = 1;
+pub const BURN_MAX_CAMPS: usize = 20;
+pub const BURN_MIN_HIPPIES: usize = 1;
+pub const BURN_MAX_HIPPIES: usize = 50;
+pub const BURN_CHUNK_SIZE: f32 = 512.0;
+pub const BURN_CAMP_SHRINK: f32 = 0.80;
+pub const BURN_BASE_CORE_RADIUS: f32 = 200.0;
+pub const BURN_RADIUS_PER_CAMP: f32 = 40.0;
+
+// Flag Psychosis
+pub const PSYCHOSIS_PENTAGRAM_GAIN_RATE: f32 = 0.15;
+pub const PSYCHOSIS_PENTAGRAM_RADIUS: f32 = 200.0 * scale::MODEL_SCALE;
+pub const PSYCHOSIS_CAMP_RETURN_DECAY: f32 = 0.02;
+pub const PSYCHOSIS_CHASE_THRESHOLD: f32 = 0.1;
+pub const PSYCHOSIS_BASE_PURSUIT_RANGE: f32 = 200.0 * scale::MODEL_SCALE;
+pub const PSYCHOSIS_MAX_PURSUIT_RANGE: f32 = 800.0 * scale::MODEL_SCALE;
+pub const PSYCHOSIS_MAX: f32 = 2.0;
+pub const PSYCHOSIS_SPEED_BOOST: f32 = 3.0;
+
+// Drunkenness
+pub const DRUNK_SPEED_FACTOR_MIN: f32 = 0.5;
+pub const DRUNK_VISION_FACTOR_MIN: f32 = 0.3;
+pub const DRUNK_WOBBLE_AMPLITUDE: f32 = 8.0 * scale::MODEL_SCALE;
+pub const DRUNK_WOBBLE_FREQUENCY: f32 = 3.0;
+
+// Dirtiness
+pub const DIRTY_DUST_THRESHOLD: f32 = 0.4;
+pub const DIRTY_STINK_THRESHOLD: f32 = 0.7;
+pub const DIRTY_DUST_PARTICLE_COUNT: usize = 3;
+pub const DIRTY_STINK_LINE_COUNT: usize = 3;
